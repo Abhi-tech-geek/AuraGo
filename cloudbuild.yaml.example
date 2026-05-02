@@ -1,0 +1,47 @@
+# Copy to cloudbuild.yaml (gitignored) and fill in your real values.
+# Run with:  gcloud builds submit --config cloudbuild.yaml .
+
+steps:
+# 1. Build a frontend+backend image. Vite needs the public Supabase URL/anon
+#    key as build args so they get baked into the JS bundle.
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    - 'build'
+    - '--build-arg'
+    - 'VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co'
+    - '--build-arg'
+    - 'VITE_SUPABASE_ANON_KEY=sb_publishable_YOUR_ANON_KEY'
+    - '-t'
+    - 'gcr.io/$PROJECT_ID/aurago:$BUILD_ID'
+    - '-t'
+    - 'gcr.io/$PROJECT_ID/aurago:latest'
+    - '.'
+
+# 2. Push BOTH tags BEFORE deploy. (Without this, the deploy step pulls a stale
+#    :latest from the registry — the new image hasn't been uploaded yet.)
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', '--all-tags', 'gcr.io/$PROJECT_ID/aurago']
+
+# 3. Deploy to Cloud Run by the unique BUILD_ID tag (immune to caching).
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: gcloud
+  args:
+    - 'run'
+    - 'deploy'
+    - 'aurago'
+    - '--image'
+    - 'gcr.io/$PROJECT_ID/aurago:$BUILD_ID'
+    - '--region'
+    - 'us-central1'
+    - '--allow-unauthenticated'
+    - '--set-env-vars'
+    - 'SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co,SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY,GROQ_API_KEY=YOUR_GROQ_KEY,SERPER_API_KEY=YOUR_SERPER_KEY'
+
+images:
+  - 'gcr.io/$PROJECT_ID/aurago:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/aurago:latest'
+
+# IMPORTANT — for production, move secrets out of this file and into
+# Google Secret Manager. Reference them via `availableSecrets` and
+# Cloud Run `--update-secrets`. Plaintext secrets in cloudbuild.yaml
+# end up in build logs and the Cloud Build history.

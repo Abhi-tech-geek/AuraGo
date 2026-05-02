@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AuraGo · v2 — AI Travel Discovery</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B1020;
+    --bg-2: #0F172A;
+    --accent: #D4AF37;
+    --accent-2: #F4D77A;
+    --accent-soft: rgba(212,175,55,0.16);
+    --glow: 0 0 32px rgba(212,175,55,0.45);
+    --ring: rgba(212,175,55,0.4);
+  }
+  body.sasta {
+    --accent: #39FF14;
+    --accent-2: #8FFF7A;
+    --accent-soft: rgba(57,255,20,0.14);
+    --glow: 0 0 28px rgba(57,255,20,0.4);
+    --ring: rgba(57,255,20,0.4);
+  }
+  * { -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background:
+      radial-gradient(1400px 700px at 15% -10%, rgba(99,102,241,0.20), transparent 60%),
+      radial-gradient(1000px 600px at 110% 110%, var(--accent-soft), transparent 55%),
+      linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+    color: #f1f5f9;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .serif { font-family: 'Instrument Serif', serif; letter-spacing: -0.015em; }
+  .glass {
+    backdrop-filter: blur(22px) saturate(140%);
+    background: rgba(255,255,255,0.045);
+    border: 1px solid rgba(255,255,255,0.09);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .glass-strong {
+    backdrop-filter: blur(28px) saturate(160%);
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .accent-bg { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .accent-text { color: var(--accent); }
+  .accent-soft-bg { background: var(--accent-soft); }
+  .accent-glow { box-shadow: var(--glow); }
+  .accent-border { border-color: var(--accent-soft) !important; }
+  .accent-ring:focus { box-shadow: 0 0 0 3px var(--ring); outline: none; }
+
+  /* aurora */
+  .aurora { position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.6; }
+  .aurora::before, .aurora::after {
+    content: ""; position: absolute; border-radius: 50%; filter: blur(80px);
+    animation: drift 18s ease-in-out infinite;
+  }
+  .aurora::before { width: 600px; height: 600px; top: -200px; left: -150px;
+    background: radial-gradient(circle, rgba(99,102,241,0.4), transparent 70%); }
+  .aurora::after { width: 700px; height: 700px; bottom: -250px; right: -200px;
+    background: radial-gradient(circle, var(--accent-soft), transparent 70%);
+    animation-delay: -9s; }
+  @keyframes drift {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50% { transform: translate(40px,-30px) scale(1.1); }
+  }
+  .grain { position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0.04;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.85'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+
+  /* deck scroll */
+  .deck { scrollbar-width: thin; scroll-snap-type: x mandatory; }
+  .deck::-webkit-scrollbar { height: 6px; }
+  .deck::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  .deck > * { scroll-snap-align: start; }
+
+  /* animations */
+  @keyframes pop { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .pop { animation: pop 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  .fadein { animation: fadein 0.5s ease both; }
+  @keyframes slidein { from { opacity: 0; transform: translateY(20px); max-height: 0; } to { opacity: 1; transform: translateY(0); max-height: 3000px; } }
+  .slidein { animation: slidein 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .shimmer { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+    background-size: 200% 100%; animation: shimmer 2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 var(--ring); } 50% { box-shadow: 0 0 0 8px transparent; } }
+  .pulse { animation: pulse 2s infinite; }
+
+  .card { transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s; }
+  .card:hover:not(:disabled) { transform: translateY(-6px); box-shadow: var(--glow); }
+  .card:disabled { opacity: 0.5; cursor: not-allowed; }
+  .dimmed { opacity: 0.3; transform: scale(0.98); transition: all 0.3s; pointer-events: none; }
+
+  /* range slider */
+  input[type="range"] { -webkit-appearance: none; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); box-shadow: var(--glow); cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%; border: none;
+    background: var(--accent); box-shadow: var(--glow); cursor: pointer;
+  }
+
+  /* toggle */
+  .toggle { position: relative; width: 44px; height: 24px; background: rgba(255,255,255,0.1);
+    border-radius: 12px; cursor: pointer; transition: background 0.2s; }
+  .toggle.on { background: var(--accent); }
+  .toggle::after { content: ""; position: absolute; width: 18px; height: 18px; background: white;
+    border-radius: 50%; top: 3px; left: 3px; transition: transform 0.2s; }
+  .toggle.on::after { transform: translateX(20px); }
+
+  /* progress bar */
+  .progress { height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 3px; transition: width 0.6s cubic-bezier(0.22,1,0.36,1); }
+
+  /* route segments */
+  .route-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    border-radius: 999px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    font-size: 12px; cursor: pointer; transition: all 0.2s; }
+  .route-pill:hover { background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+  .route-pill.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  /* modal */
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  @keyframes modalin { from { opacity: 0; transform: scale(0.94) translateY(20px); }
+    to { opacity: 1; transform: scale(1) translateY(0); } }
+  .modal { animation: modalin 0.4s cubic-bezier(0.22,1,0.36,1) both; max-width: 540px; width: 100%; }
+
+  /* utility */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>
+</head>
+<body>
+<div class="aurora"></div>
+<div class="grain"></div>
+
+<!-- ============================================================ -->
+<!-- HEADER                                                       -->
+<!-- ============================================================ -->
+<header class="glass sticky top-0 z-30 flex items-center justify-between px-5 py-3 sm:px-8">
+  <div class="flex items-center gap-3">
+    <div class="grid h-10 w-10 place-items-center rounded-2xl accent-bg accent-glow">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="text-slate-900">
+        <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <h1 class="serif text-2xl leading-none">AuraGo</h1>
+      <p class="text-[11px] text-slate-400">AI travel discovery · v2</p>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <button onclick="openBudgetModal()" id="btn-replan"
+      class="hidden sm:flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08]">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 12h18M12 3v18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      New trip
+    </button>
+    <div class="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5 text-xs">
+      <button onclick="setMode('sasta')" id="m-sasta" class="rounded-full px-3 py-1.5">Sasta</button>
+      <button onclick="setMode('elite')" id="m-elite" class="rounded-full px-3 py-1.5">Elite</button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<!-- CHAT FEED                                                    -->
+<!-- ============================================================ -->
+<main class="relative z-10 mx-auto max-w-3xl px-4 py-8 pb-40 sm:px-6">
+  <div id="feed" class="flex flex-col gap-5"></div>
+</main>
+
+<!-- ============================================================ -->
+<!-- COMPOSER                                                     -->
+<!-- ============================================================ -->
+<footer class="fixed bottom-0 left-0 right-0 z-20 px-4 pb-5 pt-2 sm:px-8"
+        style="background: linear-gradient(to top, var(--bg-2) 50%, transparent);">
+  <div class="glass-strong mx-auto flex max-w-3xl items-end gap-2 rounded-2xl p-2">
+    <button onclick="openBudgetModal()" class="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 hover:bg-white/[0.06]" title="Trip preferences">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 6h18M6 12h12M10 18h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <textarea id="prompt" rows="1" placeholder="Bolo apna sapna trip… (ya 'New trip' button dabao)"
+      class="max-h-40 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none accent-ring rounded-lg"></textarea>
+    <button onclick="onSend()" class="grid h-10 w-10 shrink-0 place-items-center rounded-xl accent-bg accent-glow hover:scale-105 active:scale-95 transition">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="text-slate-900">
+        <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+  <p class="mx-auto mt-2 max-w-3xl text-center text-[11px] text-slate-500">
+    Demo · canned data · same flow as the real app
+  </p>
+</footer>
+
+<!-- ============================================================ -->
+<!-- BUDGET / PREFERENCES MODAL                                   -->
+<!-- ============================================================ -->
+<div id="budget-modal" class="backdrop hidden">
+  <div class="modal glass-strong rounded-3xl p-6 sm:p-8">
+    <div class="mb-5">
+      <h2 class="serif text-3xl">Tell me your trip</h2>
+      <p class="mt-1 text-sm text-slate-400">Main aapke jawab se 5 verified options bana ke dikhaunga.</p>
+    </div>
+
+    <!-- mode -->
+    <div class="mb-5">
+      <label class="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">Style</label>
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="pickMode('sasta')" id="pm-sasta" class="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left hover:bg-white/[0.06]">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold">Sasta</span>
+            <span class="text-lg">💸</span>
+          </div>
+          <div class="mt-1 text-xs text-slate-400">Hostels, trains, street food magic</div>
+        </button>
+        <button onclick="pickMode('elite')" id="pm-elite" class="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left hover:bg-white/[0.06]">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold">Elite</span>
+            <span class="text-lg">👑</span>
+          </div>
+          <div class="mt-1 text-xs text-slate-400">5-star, flights, fine dining</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- origin -->
+    <div class="mb-5">
+      <label class="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">Starting from</label>
+      <input id="i-origin" type="text" placeholder="e.g. Delhi" value="Delhi"
+        class="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm focus:outline-none accent-ring" />
+    </div>
+
+    <!-- party + days -->
+    <div class="mb-5 grid grid-cols-2 gap-3">
+      <div>
+        <label class="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">Party size</label>
+        <div class="flex items-center gap-2">
+          <button onclick="bumpParty(-1)" class="grid h-9 w-9 place-items-center rounded-lg border border-white/10 hover:bg-white/[0.06]">−</button>
+          <div id="i-party" class="flex-1 rounded-lg border border-white/10 bg-white/[0.03] py-2 text-center font-semibold">4</div>
+          <button onclick="bumpParty(1)" class="grid h-9 w-9 place-items-center rounded-lg border border-white/10 hover:bg-white/[0.06]">+</button>
+        </div>
+      </div>
+      <div>
+        <label class="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">Days</label>
+        <div class="flex items-center gap-2">
+          <button onclick="bumpDays(-1)" class="grid h-9 w-9 place-items-center rounded-lg border border-white/10 hover:bg-white/[0.06]">−</button>
+          <div id="i-days" class="flex-1 rounded-lg border border-white/10 bg-white/[0.03] py-2 text-center font-semibold">4</div>
+          <button onclick="bumpDays(1)" class="grid h-9 w-9 place-items-center rounded-lg border border-white/10 hover:bg-white/[0.06]">+</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- budget slider -->
+    <div class="mb-5">
+      <div class="mb-2 flex items-center justify-between">
+        <label class="text-[11px] uppercase tracking-wider text-slate-400">Total budget</label>
+        <span id="i-budget-display" class="text-lg font-semibold">₹1,50,000</span>
+      </div>
+      <input id="i-budget" type="range" min="20000" max="500000" step="5000" value="150000" class="w-full" />
+      <div class="mt-2 flex justify-between text-[10px] text-slate-500">
+        <span>₹20k</span><span>₹1L</span><span>₹2.5L</span><span>₹5L</span>
+      </div>
+      <p id="i-budget-hint" class="mt-2 text-xs text-slate-400">≈ ₹37,500 per person · comfortable for elite trips</p>
+    </div>
+
+    <!-- universal access -->
+    <div class="mb-6 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      <div>
+        <div class="flex items-center gap-2 text-sm font-medium">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="accent-text"><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="2"/><path d="M9 10h6l-2 5 4 5M12 14v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Universal Access
+        </div>
+        <p class="text-xs text-slate-400">Wheelchair-friendly venues, ramps, lifts</p>
+      </div>
+      <div id="i-access" class="toggle on" onclick="this.classList.toggle('on')"></div>
+    </div>
+
+    <div class="flex gap-2">
+      <button onclick="closeBudgetModal()" class="flex-1 rounded-xl border border-white/10 py-3 text-sm hover:bg-white/[0.05]">Cancel</button>
+      <button onclick="submitBudget()" class="flex-2 flex-1 rounded-xl accent-bg accent-glow py-3 text-sm font-semibold text-slate-900">Find my 5 options →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================================
+// AuraGo v2 — major UX upgrade
+// Highlights:
+//  • Budget input modal (no hardcoded amount)
+//  • Smart budget breakdown (where money goes)
+//  • Route planning per destination (flight/train/road)
+//  • Polished animations, aurora bg, glassmorphism v2
+// =============================================================
+const feed = document.getElementById("feed");
+
+// ---------- state ----------
+const state = {
+  mode: "elite",
+  origin: "Delhi",
+  party: 4,
+  days: 4,
+  budget: 150000,
+  access: true,
+};
+
+// ---------- mode ----------
+function setMode(m) {
+  state.mode = m;
+  document.body.classList.toggle("sasta", m === "sasta");
+  syncModeButtons();
+  if (m === "sasta" && state.budget > 80000) updateBudget(40000);
+  if (m === "elite" && state.budget < 80000) updateBudget(150000);
+}
+function pickMode(m) { setMode(m); }
+function syncModeButtons() {
+  ["sasta","elite"].forEach(x => {
+    const inHeader = document.getElementById("m-"+x);
+    const inModal  = document.getElementById("pm-"+x);
+    if (inHeader) inHeader.style.background = state.mode === x ? "var(--accent-soft)" : "transparent";
+    if (inHeader) inHeader.style.color      = state.mode === x ? "var(--accent)" : "";
+    if (inModal)  inModal.style.borderColor = state.mode === x ? "var(--accent)" : "";
+    if (inModal)  inModal.style.background  = state.mode === x ? "var(--accent-soft)" : "";
+  });
+}
+
+// ---------- budget modal ----------
+function openBudgetModal() {
+  document.getElementById("budget-modal").classList.remove("hidden");
+  syncModeButtons();
+}
+function closeBudgetModal() {
+  document.getElementById("budget-modal").classList.add("hidden");
+}
+function bumpParty(d) { state.party = Math.max(1, Math.min(20, state.party + d));
+  document.getElementById("i-party").textContent = state.party; updateBudgetHint(); }
+function bumpDays(d) { state.days = Math.max(1, Math.min(30, state.days + d));
+  document.getElementById("i-days").textContent = state.days; updateBudgetHint(); }
+
+document.getElementById("i-budget").addEventListener("input", (e) => updateBudget(+e.target.value));
+function updateBudget(v) {
+  state.budget = v;
+  document.getElementById("i-budget").value = v;
+  document.getElementById("i-budget-display").textContent = "₹" + v.toLocaleString("en-IN");
+  updateBudgetHint();
+}
+function updateBudgetHint() {
+  const pp = Math.round(state.budget / state.party);
+  const ppd = Math.round(pp / state.days);
+  let label = "";
+  if (state.mode === "elite") {
+    if (ppd < 3000) label = "tight for elite — consider sasta mode or more budget";
+    else if (ppd < 8000) label = "good for mid-tier elite trips";
+    else label = "comfortable for elite trips";
+  } else {
+    if (ppd < 1000) label = "very tight — hostels & local transport only";
+    else if (ppd < 2500) label = "solid for backpacker style";
+    else label = "comfortable for sasta trips";
+  }
+  document.getElementById("i-budget-hint").textContent =
+    `≈ ₹${pp.toLocaleString("en-IN")} per person · ₹${ppd.toLocaleString("en-IN")}/person/day · ${label}`;
+}
+function submitBudget() {
+  state.origin = document.getElementById("i-origin").value || "Delhi";
+  state.access = document.getElementById("i-access").classList.contains("on");
+  closeBudgetModal();
+  runDeck();
+}
+
+// ---------- bubbles ----------
+function userBubble(text) {
+  return `<div class="pop flex justify-end"><div class="max-w-[85%] rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 text-[15px]">${text}</div></div>`;
+}
+function aiBubble(html) {
+  return `<div class="pop flex justify-start"><div class="glass max-w-[88%] rounded-2xl px-4 py-3 text-[15px]">
+    <div class="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" class="accent-text"><path d="M12 0l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/></svg>
+      AuraGo
+    </div>${html}</div></div>`;
+}
+function qaNotice(text) {
+  return `<div class="pop flex items-start gap-2 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3 py-2 text-[12.5px] text-slate-300">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" class="accent-text mt-0.5"><path d="M12 2l9 4v6c0 5-4 9-9 10-5-1-9-5-9-10V6l9-4z" stroke="currentColor" stroke-width="2"/></svg>
+    <span><span class="font-medium text-slate-100">QA Agent · </span>${text}</span></div>`;
+}
+function lockEvent(text) {
+  return `<div class="pop mx-auto flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-1.5 text-xs">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" class="accent-text"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="2"/></svg>${text}</div>`;
+}
+
+// =============================================================
+// DESTINATION DATA (canned but realistic)
+// In real app: backend computes these from Gemini + RAG
+// =============================================================
+
+// distance from Delhi (km) used for route calc
+const DESTINATIONS = {
+  "Udaipur":   { km: 670, hours_road: 11, vibe: "Royal Heritage", emoji: "👑" },
+  "Puducherry":{ km: 2200, hours_road: 30, vibe: "Coastal Calm",   emoji: "🌊" },
+  "Manali":    { km: 540, hours_road: 12, vibe: "Mountain Retreat",emoji: "🏔️" },
+  "Amritsar":  { km: 450, hours_road: 8,  vibe: "Spiritual Grand", emoji: "🕌" },
+  "Coorg":     { km: 2200, hours_road: 32, vibe: "Coffee Hills",   emoji: "☕" },
+};
+
+// build cards based on current state — adapts to budget & mode
+function buildCards() {
+  const perPerson = state.budget / state.party;
+  const elite = state.mode === "elite";
+  const isAccessible = (name) => name !== "Manali"; // demo rule
+
+  const all = Object.entries(DESTINATIONS).map(([dest, d], i) => {
+    const baseCost = elite ? perPerson * 0.8 * state.party : perPerson * 0.65 * state.party;
+    const cost = Math.round(baseCost * (0.85 + Math.random() * 0.3) / 1000) * 1000;
+    const score = +(7.8 + Math.random() * 1.6).toFixed(1);
+    return {
+      id: "c" + i, dest, ...d,
+      cost,
+      score,
+      access: isAccessible(dest),
+      blurb: blurbFor(dest),
+      summary: summaryFor(dest),
+      hazard: dest === "Manali" && state.access
+        ? "Heavy snow currently blocking wheelchair access at Solang Valley and Mall Road kerbs."
+        : null,
+      breakdown: budgetBreakdown(cost, dest),
+      routes: buildRoutes(state.origin, dest, d.km, elite, state.budget, state.party),
+      access_notes: accessNotesFor(dest),
+      days_plan: daysFor(dest, state.days),
+    };
+  });
+
+  // self-heal: if access on, drop blocked
+  const safe = state.access
+    ? all.filter(c => !c.hazard || c.dest !== "Manali")
+    : all;
+
+  return { cards: safe.slice(0, 5), dropped: state.access ? all.filter(c => c.hazard) : [] };
+}
+
+function blurbFor(d) {
+  return ({
+    "Udaipur":    "Marble palaces reflected in still lake water at golden hour.",
+    "Puducherry": "French shutters, slow mornings, turquoise lanes near the sea.",
+    "Manali":     "Pine forests, apple orchards, snow-dusted peaks at dawn.",
+    "Amritsar":   "Golden domes, langar kitchens, devotion humming at midnight.",
+    "Coorg":      "Mist-soaked plantations and Sunday brews on a wooden veranda.",
+  })[d];
+}
+function summaryFor(d) {
+  return ({
+    "Udaipur":    "Lake Pichola has a newly installed accessible ramp at Gate 2.",
+    "Puducherry": "White Town promenade is fully step-free for 1.8km.",
+    "Manali":     null,
+    "Amritsar":   "Golden Temple has dedicated wheelchair entrance with volunteer help.",
+    "Coorg":      "Top homestays now offer ground-floor accessible cottages.",
+  })[d];
+}
+function accessNotesFor(d) {
+  return ({
+    "Udaipur":    ["Enter through Gate 2 for smooth ramp access — crowd is lower there.", "City Palace has a side elevator near Toran Pol."],
+    "Puducherry": ["Promenade Beach has a flat boardwalk.", "Most White Town cafes have ground-floor seating."],
+    "Manali":     [],
+    "Amritsar":   ["Use the Heritage Street entrance — wheelchairs free of charge.", "Langar hall has reserved accessible seating."],
+    "Coorg":      ["Tata Plantation Trails has step-free cottages.", "Abbey Falls viewing platform reachable by car."],
+  })[d];
+}
+
+// =============================================================
+// SMART BUDGET BREAKDOWN — where the money goes
+// =============================================================
+function budgetBreakdown(total, dest) {
+  // ratios depend on destination type & mode
+  const elite = state.mode === "elite";
+  const ratios = elite
+    ? { transport: 0.30, stay: 0.40, food: 0.15, activities: 0.10, buffer: 0.05 }
+    : { transport: 0.35, stay: 0.30, food: 0.20, activities: 0.10, buffer: 0.05 };
+  return Object.entries(ratios).map(([k, v]) => ({
+    key: k,
+    label: ({transport:"Transport",stay:"Stay",food:"Food & Drink",activities:"Activities",buffer:"Buffer"})[k],
+    amount: Math.round(total * v / 100) * 100,
+    pct: Math.round(v * 100),
+    icon: ({transport:"🚆",stay:"🏨",food:"🍽️",activities:"🎟️",buffer:"💼"})[k],
+  }));
+}
+
+// =============================================================
+// ROUTE PLANNING — flight / train / road comparison
+// =============================================================
+function buildRoutes(origin, dest, km, elite, totalBudget, party) {
+  // canned but realistic estimates per person, return trip
+  const per = totalBudget / party;
+  const flightOk = km > 400;
+  const flightCost = Math.round((elite ? 14000 : 7500) * (km / 1000) / 500) * 500;
+  const trainCost  = Math.round((elite ? 4500 : 1800) * (km / 1000) / 100) * 100;
+  const roadCost   = Math.round((km * 18) / party / 100) * 100; // shared cab
+  const flightHrs  = Math.round(km / 700 * 10) / 10 + 2; // air time + airport
+  const trainHrs   = Math.round(km / 70 * 10) / 10;
+  const roadHrs    = Math.round(km / 60 * 10) / 10;
+
+  const opts = [];
+  if (flightOk) opts.push({
+    mode: "flight", icon: "✈️", label: "Flight",
+    cost_pp: flightCost, time: `${flightHrs.toFixed(1)} hr`,
+    via: `${origin} → ${dest} (direct)`,
+    pros: ["Fastest","Comfortable for elite trips"],
+    cons: km < 600 ? ["Overkill for short distance"] : [],
+    score: elite ? 9.2 : 7.5,
+  });
+  opts.push({
+    mode: "train", icon: "🚆", label: "Train (AC)",
+    cost_pp: trainCost, time: `${trainHrs.toFixed(1)} hr`,
+    via: `${origin} → ${dest} via Rajdhani / Vande Bharat`,
+    pros: ["Sweet spot of cost & comfort","Sightseeing en route"],
+    cons: trainHrs > 18 ? ["Long journey"] : [],
+    score: 8.8,
+  });
+  if (km < 1000) opts.push({
+    mode: "road", icon: "🚗", label: "Road trip",
+    cost_pp: roadCost, time: `${roadHrs.toFixed(1)} hr`,
+    via: `Self-drive / shared cab via ${roadVia(dest)}`,
+    pros: ["Stop wherever you want","Best for groups"],
+    cons: roadHrs > 10 ? ["Long drive — split across 2 days"] : [],
+    score: party >= 4 ? 8.5 : 7.0,
+  });
+
+  // pick best for current mode/budget
+  opts.forEach(o => o.recommended = false);
+  const sorted = [...opts].sort((a,b) => {
+    if (elite) return b.score - a.score;
+    return a.cost_pp - b.cost_pp;
+  });
+  sorted[0].recommended = true;
+  return opts;
+}
+function roadVia(d) {
+  return ({"Udaipur":"NH48 (Jaipur)","Manali":"NH3 (Chandigarh, Kullu)","Amritsar":"NH44 (Ambala)","Puducherry":"too far for road","Coorg":"too far for road"})[d] || "scenic route";
+}
+
+// =============================================================
+// DAY PLANS
+// =============================================================
+function daysFor(dest, totalDays) {
+  const tpl = ({
+    "Udaipur": [
+      { title: "Arrival & Lake Pichola sunset", acts: ["Check-in & rest","Sunset boat ride (Gate 2 ramp boarding)","Dinner at Sheesh Mahal"] },
+      { title: "City Palace deep-dive",         acts: ["City Palace via side elevator","Crystal Gallery tour","Bagore-ki-Haveli folk show"] },
+      { title: "Sajjangarh & artisan shopping", acts: ["Monsoon Palace viewpoint","Hathi Pol artisan market","Farewell dinner at Ambrai"] },
+      { title: "Day trip to Kumbhalgarh",       acts: ["Drive to Kumbhalgarh fort","Lunch at heritage haveli","Return by sunset"] },
+      { title: "Slow morning & departure",      acts: ["Breakfast at Jagat Niwas","Last-minute shopping","Depart"] },
+    ],
+    "Puducherry": [
+      { title: "White Town wander",       acts: ["Promenade walk at sunrise","Cafe des Arts brunch","Aurobindo Ashram"] },
+      { title: "Auroville day trip",      acts: ["Matrimandir viewing","Sadhana Forest tour","Dinner at La Villa"] },
+      { title: "Beach day & Tamil Quarter",acts: ["Paradise Beach boat ride","Tamil Quarter walk","Dinner at Bay of Buddha"] },
+      { title: "Slow morning & departure",acts: ["Cafe breakfast","Last shopping","Depart"] },
+    ],
+    "Amritsar": [
+      { title: "Golden Temple",     acts: ["Morning darshan","Langar lunch","Jallianwala Bagh memorial"] },
+      { title: "Wagah Border",      acts: ["Border ceremony (accessible viewing)","Heritage Street dinner"] },
+      { title: "Partition Museum",  acts: ["Museum visit","Gobindgarh Fort tour","Old city food walk"] },
+      { title: "Departure",         acts: ["Breakfast","Depart"] },
+    ],
+    "Coorg": [
+      { title: "Plantation life",   acts: ["Coffee estate tour","Riverside lunch"] },
+      { title: "Sights",            acts: ["Abbey Falls viewpoint","Raja's Seat sunset"] },
+      { title: "Adventure (light)", acts: ["Dubare elephant camp","River rafting (optional)"] },
+      { title: "Departure",         acts: ["Breakfast at estate","Depart"] },
+    ],
+    "Manali": [
+      { title: "Arrival",  acts: ["Check-in","Old Manali walk"] },
+      { title: "Solang",   acts: ["Cable car","Snow activities"] },
+      { title: "Rohtang",  acts: ["Day trip to Rohtang","Local market"] },
+      { title: "Departure",acts: ["Breakfast","Depart"] },
+    ],
+  })[dest] || [];
+  return tpl.slice(0, totalDays).map((d,i) => ({ day: i+1, ...d }));
+}
+
+// =============================================================
+// RENDER: deck
+// =============================================================
+let CURRENT_CARDS = [];
+let activeCardId = null;
+let activeRouteIdx = {};
+let lockedCards = new Set();
+
+function deckHTML(cards) {
+  return `<div id="deck-wrapper" class="pop">
+    <div id="deck" class="glass-strong rounded-2xl p-4 sm:p-5 accent-border">
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" class="accent-text"><path d="M12 0l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/></svg>
+          ${cards.length} verified mystery options
+        </div>
+        <div class="text-[11px] text-slate-400">From <span class="accent-text font-medium">${state.origin}</span> · ₹${state.budget.toLocaleString("en-IN")} · ${state.days}d · ${state.party}p</div>
+      </div>
+      <p class="mb-4 text-[15px]">Live data se ${state.access ? "accessibility, " : ""}prices aur recent reviews verify kiye. Koi bhi card tap karo — full plan + route options dikhaunga.</p>
+      <div class="deck flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+        ${cards.map((c,i) => cardHTML(c,i)).join("")}
+      </div>
+      <div class="mt-3 text-center text-[11px] text-slate-500">← swipe to see all 5 →</div>
+    </div>
+    <div id="itinerary-slot"></div>
+  </div>`;
+}
+
+function cardHTML(c, i) {
+  return `<button onclick="openCard('${c.id}')" id="card-${c.id}"
+    class="card relative flex w-[260px] sm:w-[240px] shrink-0 flex-col gap-3 rounded-2xl border border-white/[0.08] p-4 text-left"
+    style="background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); animation: pop 0.5s ${i*70}ms both;">
+    <div class="flex items-center justify-between">
+      <span class="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider accent-soft-bg accent-text">${c.vibe}</span>
+      ${c.access ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="accent-text"><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="2"/><path d="M9 10h6l-2 5 4 5M12 14v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>` : ""}
+    </div>
+    <div class="flex h-28 items-center justify-center text-5xl">${c.emoji}</div>
+    <div class="text-[13px] leading-snug text-slate-300 min-h-[40px]">${c.blurb}</div>
+    <div class="flex items-center justify-between border-t border-white/[0.06] pt-3 text-[12px]">
+      <div class="flex items-center gap-1 text-slate-400">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" class="accent-text"><path d="M12 0l3 9 9 3-9 3-3 9-3-9-9-3 9-3z"/></svg>
+        <span class="font-semibold text-slate-100">${c.score.toFixed(1)}</span><span>/ 10</span>
+      </div>
+      <div class="text-slate-300 font-medium">₹${c.cost.toLocaleString("en-IN")}</div>
+    </div>
+    <div class="absolute bottom-2 right-3 text-[10px] text-slate-500 opacity-0 group-hover:opacity-100">Tap →</div>
+  </button>`;
+}
+
+// =============================================================
+// RENDER: itinerary (deep-dive)
+// =============================================================
+function itineraryHTML(c) {
+  const route = c.routes[activeRouteIdx[c.id] ?? c.routes.findIndex(r => r.recommended)];
+  const totalRouteCost = route.cost_pp * state.party;
+  return `<section class="slidein glass-strong mt-3 rounded-2xl p-5 sm:p-6 accent-border accent-glow">
+    <!-- header -->
+    <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <button onclick="closeCard()" class="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08]">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M19 12H5M12 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Back to options
+      </button>
+      <div class="flex items-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="accent-text"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="2"/></svg>
+        <h3 class="serif text-2xl">${c.dest}</h3>
+        <span class="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider accent-soft-bg accent-text">${c.vibe}</span>
+      </div>
+      <button onclick="lockTrip('${c.id}')" id="lock-btn" class="flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-slate-900 accent-bg accent-glow ${lockedCards.has(c.id) ? '' : 'pulse'}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="2"/></svg>
+        ${lockedCards.has(c.id) ? "Locked" : "Lock it in"}
+      </button>
+    </div>
+
+    ${c.summary ? `<div class="mb-4 flex items-start gap-2 rounded-lg border accent-border bg-white/[0.025] p-3 text-[13px] text-slate-300">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="accent-text mt-0.5"><path d="M12 2l9 4v6c0 5-4 9-9 10-5-1-9-5-9-10V6l9-4z" stroke="currentColor" stroke-width="2"/></svg>
+      <div><span class="font-medium text-slate-100">Live verified · </span>${c.summary}</div>
+    </div>` : ""}
+
+    ${c.hazard ? `<div class="mb-4 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] p-3 text-[13px] text-amber-100">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="text-amber-300 mt-0.5"><path d="M12 2L2 22h20L12 2z" stroke="currentColor" stroke-width="2"/><path d="M12 9v6M12 18h.01" stroke="currentColor" stroke-width="2"/></svg>
+      <div><span class="font-medium">Heads up · </span>${c.hazard}</div>
+    </div>` : ""}
+
+    <!-- ROUTE PICKER -->
+    <div class="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="accent-text"><path d="M3 12c0-5 4-9 9-9s9 4 9 9-4 9-9 9" stroke="currentColor" stroke-width="2"/><path d="M3 12l4-4M3 12l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Route from ${state.origin}
+        </div>
+        <div class="text-[11px] text-slate-500">${DESTINATIONS[c.dest].km} km · pick how to travel</div>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-3">
+        ${c.routes.map((r,i) => `
+          <button onclick="pickRoute('${c.id}',${i})" class="route-pill ${(activeRouteIdx[c.id] ?? c.routes.findIndex(x=>x.recommended)) === i ? 'active' : ''}">
+            <span>${r.icon}</span> <span>${r.label}</span>
+            <span class="text-slate-500">·</span>
+            <span class="font-semibold">₹${r.cost_pp.toLocaleString("en-IN")}/p</span>
+            ${r.recommended ? '<span class="ml-1 text-[9px] uppercase accent-text">★ Best</span>' : ''}
+          </button>`).join("")}
+      </div>
+      <div class="rounded-lg bg-white/[0.03] p-3 text-[13px]">
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-medium">${route.icon} ${route.label}</span>
+          <span class="text-slate-400">${route.time} · ₹${totalRouteCost.toLocaleString("en-IN")} for ${state.party}</span>
+        </div>
+        <p class="text-slate-400 text-[12px] mb-2">${route.via}</p>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+          ${route.pros.map(p => `<span class="text-emerald-300">✓ ${p}</span>`).join("")}
+          ${route.cons.map(p => `<span class="text-amber-300">⚠ ${p}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <!-- BUDGET BREAKDOWN -->
+    <div class="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
+      <div class="mb-3 flex items-center justify-between">
+        <div class="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="accent-text"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 100 7H14a3.5 3.5 0 110 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Where the ₹${c.cost.toLocaleString("en-IN")} goes
+        </div>
+      </div>
+      <div class="space-y-2">
+        ${c.breakdown.map(b => `
+          <div>
+            <div class="flex items-center justify-between text-[13px] mb-1">
+              <span>${b.icon} ${b.label}</span>
+              <span><span class="text-slate-400">${b.pct}%</span> · <span class="font-medium">₹${b.amount.toLocaleString("en-IN")}</span></span>
+            </div>
+            <div class="progress"><div class="progress-fill" style="width: ${b.pct * 2.5}%"></div></div>
+          </div>`).join("")}
+      </div>
+    </div>
+
+    <!-- DAY PLAN -->
+    <div class="mb-5">
+      <div class="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="accent-text"><rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 2v4M16 2v4" stroke="currentColor" stroke-width="2"/></svg>
+        ${c.days_plan.length}-day plan
+      </div>
+      <div class="grid gap-2">
+        ${c.days_plan.map(d => `
+          <div class="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            <div class="mb-1 flex items-center gap-2 text-[12px]">
+              <span class="rounded-full accent-soft-bg accent-text px-2 py-0.5 text-[10px] font-semibold">Day ${d.day}</span>
+              <span class="text-slate-300">${d.title}</span>
+            </div>
+            <ul class="text-[13px] text-slate-300 space-y-0.5">
+              ${d.acts.map(a => `<li class="flex gap-2"><span class="accent-text">•</span>${a}</li>`).join("")}
+            </ul>
+          </div>`).join("")}
+      </div>
+    </div>
+
+    ${c.access_notes.length ? `<div class="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+      <div class="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="accent-text"><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="2"/></svg>
+        Smart access notes
+      </div>
+      <ul class="space-y-1 text-[13px] text-slate-200">
+        ${c.access_notes.map(n => `<li>· ${n}</li>`).join("")}
+      </ul></div>` : ""}
+
+    <!-- TOTAL -->
+    <div class="flex items-center justify-between border-t border-white/[0.06] pt-3 text-sm">
+      <span class="text-slate-400">Estimated total (stay + food + activities)</span>
+      <span class="text-base font-semibold">₹${c.cost.toLocaleString("en-IN")}</span>
+    </div>
+    <div class="flex items-center justify-between text-[12px] text-slate-500 pt-1">
+      <span>+ travel (${route.label})</span>
+      <span>₹${totalRouteCost.toLocaleString("en-IN")}</span>
+    </div>
+    <div class="mt-2 flex items-center justify-between rounded-lg accent-soft-bg p-3 text-sm">
+      <span class="font-medium">Grand total</span>
+      <span class="serif text-xl">₹${(c.cost + totalRouteCost).toLocaleString("en-IN")}</span>
+    </div>
+  </section>`;
+}
+
+// ---------- interaction ----------
+function pickRoute(cardId, idx) {
+  activeRouteIdx[cardId] = idx;
+  const card = CURRENT_CARDS.find(c => c.id === cardId);
+  document.getElementById("itinerary-slot").innerHTML = itineraryHTML(card);
+}
+function openCard(id) {
+  activeCardId = id;
+  const c = CURRENT_CARDS.find(x => x.id === id);
+  document.getElementById("deck").classList.add("dimmed");
+  document.getElementById("itinerary-slot").innerHTML = itineraryHTML(c);
+  setTimeout(() => document.getElementById("itinerary-slot").scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+}
+function closeCard() {
+  activeCardId = null;
+  document.getElementById("deck").classList.remove("dimmed");
+  document.getElementById("itinerary-slot").innerHTML = "";
+  setTimeout(() => document.getElementById("deck").scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+}
+function lockTrip(id) {
+  if (lockedCards.has(id)) return;
+  lockedCards.add(id);
+  const c = CURRENT_CARDS.find(x => x.id === id);
+  // refresh button
+  document.getElementById("itinerary-slot").innerHTML = itineraryHTML(c);
+  feed.insertAdjacentHTML("beforeend", lockEvent(`Locked: ${c.dest}`));
+  feed.insertAdjacentHTML("beforeend", aiBubble(
+    `<p class="mb-2"><strong>${c.dest}</strong> locked! 🎉</p>
+     <p class="text-sm text-slate-300">Smart hint: <em>${c.access_notes[0] || "Enjoy the trip!"}</em></p>
+     <p class="text-xs text-slate-400 mt-2">Friends ko share karne ke liye Real app me share button ayega.</p>`));
+  scrollToBottom();
+}
+function scrollToBottom() {
+  setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }), 60);
+}
+
+// =============================================================
+// FLOW: send / runDeck
+// =============================================================
+function onSend() {
+  const ta = document.getElementById("prompt");
+  const text = ta.value.trim();
+  if (!text) { openBudgetModal(); return; }
+  ta.value = "";
+  feed.insertAdjacentHTML("beforeend", userBubble(text));
+  scrollToBottom();
+  // open budget modal so AI can confirm
+  setTimeout(() => {
+    feed.insertAdjacentHTML("beforeend", aiBubble(
+      `Achha! Pehle 2 cheez confirm karte hain — phir 5 verified picks deta hoon.`));
+    scrollToBottom();
+    setTimeout(openBudgetModal, 600);
+  }, 500);
+}
+
+function runDeck() {
+  // describe what we got
+  feed.insertAdjacentHTML("beforeend", userBubble(
+    `${state.mode === 'elite' ? 'Elite' : 'Sasta'} trip · ${state.party} ppl · ${state.days}d · ₹${state.budget.toLocaleString("en-IN")} · from ${state.origin}${state.access ? ' · wheelchair access' : ''}`
+  ));
+  scrollToBottom();
+
+  // typing
+  const tid = "t" + Date.now();
+  feed.insertAdjacentHTML("beforeend", `<div id="${tid}" class="pop flex items-center gap-2 text-sm text-slate-400">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" class="spin"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" stroke-dasharray="40 20"/></svg>
+    Live data check ho raha hai (Serper + cached reviews)…</div>`);
+  scrollToBottom();
+
+  setTimeout(() => {
+    document.getElementById(tid)?.remove();
+    const { cards, dropped } = buildCards();
+    CURRENT_CARDS = cards;
+    activeRouteIdx = {};
+
+    if (dropped.length > 0) {
+      feed.insertAdjacentHTML("beforeend", qaNotice(
+        `Self-healed ${dropped.length} option(s) flagged by live data (snow blocking wheelchair access at one mountain destination).`));
+    }
+    feed.insertAdjacentHTML("beforeend", deckHTML(cards));
+    scrollToBottom();
+  }, 1500);
+}
+
+// ---------- boot ----------
+window.addEventListener("DOMContentLoaded", () => {
+  syncModeButtons();
+  updateBudget(state.budget);
+  feed.insertAdjacentHTML("beforeend", aiBubble(
+    `<p class="mb-2 serif text-xl">Hi! Main <strong>AuraGo</strong>.</p>
+     <p>Aapka trip plan karne ke liye 30 second chahiye. <strong>"New trip"</strong> ya neeche wala filter button dabao.</p>
+     <p class="mt-3 text-xs text-slate-400">Ya direct type karo: <em>"Plan an elite trip for 4 from Mumbai with wheelchair access"</em></p>`));
+});
+</script>
+</body>
+</html>
