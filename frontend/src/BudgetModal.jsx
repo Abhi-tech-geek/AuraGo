@@ -44,7 +44,7 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
       className="aura-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
     >
-      <div className="aura-modal glass-strong rounded-3xl p-6 sm:p-8">
+      <div className="aura-modal glass-strong rounded-3xl p-5 sm:p-8">
         <div className="mb-5">
           <h2 className="serif text-3xl">Tell me your trip</h2>
           <p className="mt-1 text-sm text-slate-400">

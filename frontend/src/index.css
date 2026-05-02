@@ -179,3 +179,31 @@ input[type="range"]::-moz-range-thumb {
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Mobile safe-area helpers (iOS notch / home indicator) */
+.safe-pt { padding-top: max(env(safe-area-inset-top), 0px); }
+.safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.safe-px { padding-left: max(env(safe-area-inset-left), 0px); padding-right: max(env(safe-area-inset-right), 0px); }
+.safe-bottom-pad { padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+
+/* Make horizontal scrollers feel native on iOS */
+.deck-scroll, .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Stop the body from rubber-band scrolling behind fixed footers on iOS */
+html, body { overscroll-behavior-y: none; }
+
+/* Tap highlights look bad on dark UI */
+button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
+
+/* Modal backdrop should respect safe areas so the panel never overlaps notch */
+.aura-backdrop {
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* The modal itself caps height & scrolls inside on small phones */
+.aura-modal {
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}

@@ -76,15 +76,19 @@ export default function ConciergeChat({ context }) {
         <button
           onClick={() => setOpen(true)}
           aria-label="Ask AuraGo concierge"
-          className="accent-bg accent-glow pulse-ring fixed bottom-28 right-4 z-40 grid h-14 w-14 place-items-center rounded-full text-slate-900 transition hover:scale-105 sm:right-6"
+          className="accent-bg accent-glow pulse-ring fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full text-slate-900 transition hover:scale-105 sm:right-6 sm:h-14 sm:w-14"
+          style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
         >
-          <Bot size={22} />
+          <Bot size={20} />
         </button>
       )}
 
       {/* Panel */}
       {open && (
-        <div className="glass-strong fixed bottom-28 right-3 z-40 flex h-[520px] max-h-[78vh] w-[min(360px,94vw)] flex-col rounded-2xl border border-white/10 sm:right-6">
+        <div
+          className="glass-strong fixed right-2 z-40 flex h-[480px] max-h-[70vh] w-[min(360px,calc(100vw-1rem))] flex-col rounded-2xl border border-white/10 sm:right-6"
+          style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
+        >
           {/* header */}
           <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
             <div className="flex items-center gap-2">

@@ -238,33 +238,33 @@ export default function ChatInterface({
       <div className="grain" />
 
       {/* ================= HEADER ================= */}
-      <header className="glass sticky top-0 z-20 flex items-center justify-between px-5 py-3 sm:px-8">
-        <div className="flex items-center gap-3">
+      <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-8 sm:py-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button
             onClick={onOpenSidebar}
-            className="grid h-9 w-9 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] md:hidden"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] md:hidden"
             aria-label="Open trips"
           >
             <Menu size={16} />
           </button>
-          <div className="accent-bg accent-glow grid h-10 w-10 place-items-center rounded-2xl">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-slate-900">
+          <div className="accent-bg accent-glow grid h-9 w-9 shrink-0 place-items-center rounded-2xl sm:h-10 sm:w-10">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-slate-900">
               <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" fill="currentColor"/>
             </svg>
           </div>
-          <div>
-            <h1 className="serif text-2xl leading-none">AuraGo</h1>
+          <div className="min-w-0">
+            <h1 className="serif truncate text-xl leading-none sm:text-2xl">AuraGo</h1>
             <p className="hidden text-[11px] text-slate-400 sm:block">AI travel discovery</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <button
             onClick={() => setModalOpen(true)}
             className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08] sm:flex"
           >
             <Plus size={12} /> Trip preferences
           </button>
-          <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5 text-xs">
+          <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5 text-[11px] sm:text-xs">
             <ModeBtn active={prefs.mode === "sasta"} onClick={() => handleModeToggle("sasta")}>Sasta</ModeBtn>
             <ModeBtn active={prefs.mode === "elite"} onClick={() => handleModeToggle("elite")}>Elite</ModeBtn>
           </div>
@@ -272,7 +272,10 @@ export default function ChatInterface({
       </header>
 
       {/* ================= FEED ================= */}
-      <main className="relative z-10 mx-auto max-w-3xl px-4 py-8 pb-40 sm:px-6">
+      <main
+        className="relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8"
+        style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom))" }}
+      >
         <LayoutGroup>
           <div className="flex flex-col gap-5">
             {messages.length === 0 && !sending && (
@@ -328,8 +331,8 @@ export default function ChatInterface({
 
       {/* ================= COMPOSER ================= */}
       <footer
-        className="fixed bottom-0 left-0 right-0 z-20 px-4 pb-5 pt-2 sm:px-8"
-        style={{ background: "linear-gradient(to top, var(--bg-2) 50%, transparent)" }}
+        className="safe-bottom-pad safe-px fixed bottom-0 left-0 right-0 z-20 px-3 pt-2 sm:px-8"
+        style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
       >
         <div className="glass-strong mx-auto flex max-w-3xl items-end gap-2 rounded-2xl p-2">
           <button
@@ -406,7 +409,7 @@ function ModeBtn({ active, onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-full px-3 py-1.5 transition"
+      className="rounded-full px-2.5 py-1 transition sm:px-3 sm:py-1.5"
       style={{
         background: active ? "var(--accent-soft)" : "transparent",
         color: active ? "var(--accent)" : "",
@@ -500,7 +503,7 @@ function MysteryDeck({ message, prefs, dimmed, onCardOpen }) {
     <motion.div layout
       animate={{ opacity: dimmed ? 0.3 : 1, scale: dimmed ? 0.98 : 1 }}
       transition={{ duration: 0.25 }}
-      className={`glass-strong accent-border rounded-2xl p-4 sm:p-5 ${dimmed ? "pointer-events-none" : ""}`}
+      className={`glass-strong accent-border rounded-2xl p-3 sm:p-5 ${dimmed ? "pointer-events-none" : ""}`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
@@ -685,7 +688,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       animate={{ opacity: 1, y: 0, height: "auto" }}
       exit={{ opacity: 0, y: 8, height: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="glass-strong accent-border accent-glow mt-3 overflow-hidden rounded-2xl p-5 sm:p-6"
+      className="glass-strong accent-border accent-glow mt-3 overflow-hidden rounded-2xl p-3 sm:p-6"
     >
       {/* header */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -695,7 +698,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         </button>
         <div className="flex flex-wrap items-center gap-2">
           <MapPin size={14} className="accent-text" />
-          <h3 className="serif text-2xl">{p.destination}</h3>
+          <h3 className="serif text-xl sm:text-2xl">{p.destination}</h3>
           <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">
             {p.vibe}
           </span>

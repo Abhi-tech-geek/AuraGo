@@ -99,27 +99,27 @@ function PublicTrip({ trip }) {
       <div className="grain" />
 
       {/* Header */}
-      <header className="glass sticky top-0 z-20 flex items-center justify-between px-5 py-3 sm:px-8">
-        <div className="flex items-center gap-3">
-          <div className="accent-bg accent-glow grid h-10 w-10 place-items-center rounded-2xl">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-slate-900">
+      <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:px-8 sm:py-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <div className="accent-bg accent-glow grid h-9 w-9 shrink-0 place-items-center rounded-2xl sm:h-10 sm:w-10">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-slate-900">
               <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" fill="currentColor"/>
             </svg>
           </div>
-          <div>
-            <h1 className="serif text-2xl leading-none">AuraGo</h1>
+          <div className="min-w-0">
+            <h1 className="serif truncate text-xl leading-none sm:text-2xl">AuraGo</h1>
             <p className="hidden text-[11px] text-slate-400 sm:block">Shared trip · view only</p>
           </div>
         </div>
         <a
           href="/"
-          className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08]"
+          className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] hover:bg-white/[0.08] sm:text-xs"
         >
           Plan your own →
         </a>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      <main className="safe-px relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8" style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}>
         <div className="glass-strong accent-border accent-glow overflow-hidden rounded-2xl p-5 sm:p-6">
           {/* Title */}
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
