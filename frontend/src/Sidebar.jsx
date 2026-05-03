@@ -11,11 +11,21 @@ export default function Sidebar({
   onDelete,
   onSignOut,
   onCompare,
+  pinned = true,
   open,
   onClose,
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const atLimit = sessions.length >= MAX_SESSIONS;
+
+  // Combined visibility:
+  //   - mobile: visible when `open` is true
+  //   - desktop: visible when `pinned` is true (overrides `open`)
+  const visible = open || pinned;
+  // Mobile-only translate (always controlled by `open`):
+  const mobileTranslate = open ? "translate-x-0" : "-translate-x-full";
+  // Desktop translate based on pinned:
+  const desktopTranslate = pinned ? "md:translate-x-0" : "md:-translate-x-full";
 
   return (
     <>
@@ -27,7 +37,8 @@ export default function Sidebar({
         />
       )}
       <aside
-        className={`glass safe-pt safe-pb fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,85vw)] flex-col border-r border-white/10 transition-transform md:w-72 md:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        aria-hidden={!visible}
+        className={`glass safe-pt safe-pb fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,85vw)] flex-col border-r border-white/10 transition-transform duration-300 ease-out md:w-72 ${mobileTranslate} ${desktopTranslate}`}
       >
         {/* header */}
         <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
@@ -79,10 +90,10 @@ export default function Sidebar({
                 return (
                   <li key={s.id}>
                     <div
-                      className={`group flex items-center gap-1 rounded-xl border px-2 py-2 transition ${
+                      className={`group flex items-center gap-1 rounded-xl border px-2 py-2 transition-all duration-200 ${
                         isActive
-                          ? "accent-border accent-soft-bg"
-                          : "border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                          ? "accent-border accent-soft-bg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
+                          : "border-transparent hover:border-white/10 hover:bg-white/[0.05]"
                       }`}
                     >
                       <button
@@ -119,7 +130,7 @@ export default function Sidebar({
                       ) : (
                         <button
                           onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id); }}
-                          className="rounded-md p-1.5 text-slate-500 hover:bg-white/[0.06] hover:text-red-300 opacity-0 group-hover:opacity-100"
+                          className="rounded-md p-1.5 text-slate-500 transition-opacity hover:bg-white/[0.06] hover:text-red-300 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                           title="Delete trip"
                         >
                           <Trash2 size={13} />

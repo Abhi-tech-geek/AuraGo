@@ -12,7 +12,7 @@ import {
   AlertTriangle, Accessibility, Loader2, MapPin, Plus,
   Sliders, Menu, CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
   Hotel, Star, Plane, Train, Building2, MessageCircle, X, CheckSquare,
-  Square, Bot, Share2, Check, Car,
+  Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
@@ -28,7 +28,9 @@ const FALLBACK_PREFS = {
 };
 
 export default function ChatInterface({
-  sessionId, currentUser, prefs: prefsProp, onPrefsChange, onOpenSidebar,
+  sessionId, currentUser, prefs: prefsProp, onPrefsChange,
+  onOpenSidebar, onToggleSidebar, sidebarPinned = true,
+  onSessionTitleChange,
 }) {
   const prefs = prefsProp ?? FALLBACK_PREFS;
   const [session, setSession]     = useState(null);
@@ -298,19 +300,22 @@ export default function ChatInterface({
       {/* ================= HEADER ================= */}
       <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-8 sm:py-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          {/* Always-visible sidebar toggle (works on mobile + desktop) */}
           <button
-            onClick={onOpenSidebar}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] md:hidden"
-            aria-label="Open trips"
+            onClick={onToggleSidebar ?? onOpenSidebar}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08]"
+            aria-label={sidebarPinned ? "Hide trips" : "Show trips"}
           >
             <Menu size={16} />
           </button>
+          {/* Brand block — collapses to icon-only on desktop when sidebar is
+              pinned (avoids the duplicate AuraGo) */}
           <div className="accent-bg accent-glow grid h-9 w-9 shrink-0 place-items-center rounded-2xl sm:h-10 sm:w-10">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-slate-900">
               <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" fill="currentColor"/>
             </svg>
           </div>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${sidebarPinned ? "md:hidden" : ""}`}>
             <h1 className="serif truncate text-xl leading-none sm:text-2xl">AuraGo</h1>
             <p className="hidden text-[11px] text-slate-400 sm:block">AI travel discovery</p>
           </div>
@@ -362,6 +367,7 @@ export default function ChatInterface({
                             sessionId={sessionId}
                             onBack={() => onBackToDeck(m.id)}
                             onPickSimilar={handlePickSimilar}
+                            onLocked={(destination) => onSessionTitleChange?.(sessionId, destination)}
                           />
                         )}
                       </AnimatePresence>
@@ -389,7 +395,7 @@ export default function ChatInterface({
 
       {/* ================= COMPOSER ================= */}
       <footer
-        className="safe-bottom-pad safe-px fixed bottom-0 left-0 right-0 z-20 px-3 pt-2 sm:px-8"
+        className={`safe-bottom-pad safe-px fixed bottom-0 right-0 z-20 px-3 pt-2 transition-[left] duration-300 ease-out sm:px-8 ${sidebarPinned ? "left-0 md:left-72" : "left-0"}`}
         style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
       >
         {/* Composer mode switcher — Mystery vs Direct */}
@@ -618,13 +624,50 @@ function LockChip({ message }) {
 // =====================================================================
 function MysteryDeck({ message, prefs, dimmed, onCardOpen }) {
   const cards = message.payload?.cards ?? [];
+  const scrollerRef = useRef(null);
+  const [canPrev, setCanPrev] = useState(false);
+  const [canNext, setCanNext] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  // Keep arrow / dot state in sync with scroll position
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const update = () => {
+      setCanPrev(el.scrollLeft > 4);
+      setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+      // active index = nearest card start
+      const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12; // gap-3 = 12px
+      setActiveIdx(Math.round(el.scrollLeft / cardWidth));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", update); ro.disconnect(); };
+  }, [cards.length]);
+
+  const scrollBy = (dir) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12;
+    el.scrollBy({ left: dir * cardWidth, behavior: "smooth" });
+  };
+
+  const scrollToIdx = (i) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12;
+    el.scrollTo({ left: i * cardWidth, behavior: "smooth" });
+  };
+
   return (
     <motion.div layout
       animate={{ opacity: dimmed ? 0.3 : 1, scale: dimmed ? 0.98 : 1 }}
       transition={{ duration: 0.25 }}
-      className={`glass-strong accent-border rounded-2xl p-3 sm:p-5 ${dimmed ? "pointer-events-none" : ""}`}
+      className={`glass-strong accent-border relative rounded-2xl p-3 sm:p-5 ${dimmed ? "pointer-events-none" : ""}`}
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
           <Sparkles size={10} className="accent-text" />
           {cards.length} verified mystery options
@@ -639,12 +682,54 @@ function MysteryDeck({ message, prefs, dimmed, onCardOpen }) {
           {message.payload.intro}
         </p>
       )}
-      <div className="deck-scroll -mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
-        {cards.map((c, i) => (
-          <MysteryCard key={c.id} card={c} index={i} onOpen={() => onCardOpen(c)} disabled={dimmed} />
-        ))}
+
+      {/* Deck + chevron arrows. Arrows hidden on mobile (touch swipe is enough). */}
+      <div className="relative">
+        <div ref={scrollerRef} className="deck-scroll -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+          {cards.map((c, i) => (
+            <MysteryCard
+              key={c.id} card={c} index={i}
+              onOpen={() => onCardOpen(c)} disabled={dimmed}
+            />
+          ))}
+        </div>
+
+        {/* Prev */}
+        <button
+          onClick={() => scrollBy(-1)}
+          aria-label="Previous card"
+          className={`absolute left-0 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-slate-900/80 p-1.5 text-slate-200 backdrop-blur transition hover:bg-slate-900 sm:flex ${canPrev ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        {/* Next */}
+        <button
+          onClick={() => scrollBy(1)}
+          aria-label="Next card"
+          className={`absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 rounded-full border border-white/10 bg-slate-900/80 p-1.5 text-slate-200 backdrop-blur transition hover:bg-slate-900 sm:flex ${canNext ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        >
+          <ChevronRight size={16} />
+        </button>
       </div>
-      <div className="mt-3 text-center text-[11px] text-slate-500">← swipe to see all {cards.length} →</div>
+
+      {/* Dot indicators */}
+      {cards.length > 1 && (
+        <div className="mt-3 flex items-center justify-center gap-1.5">
+          {cards.map((_, i) => (
+            <button
+              key={i}
+              aria-label={`Go to card ${i + 1}`}
+              onClick={() => scrollToIdx(i)}
+              className="rounded-full transition"
+              style={{
+                width:  i === activeIdx ? 18 : 6,
+                height: 6,
+                background: i === activeIdx ? "var(--accent)" : "rgba(255,255,255,0.18)",
+              }}
+            />
+          ))}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -653,6 +738,7 @@ function MysteryCard({ card, index, onOpen, disabled }) {
   return (
     <motion.button
       layoutId={`card-${card.id}`}
+      data-card
       onClick={onOpen} disabled={disabled}
       initial={{ opacity: 0, y: 14, rotateZ: -1.5 }}
       animate={{ opacity: 1, y: 0, rotateZ: 0 }}
@@ -738,7 +824,7 @@ function PuzzleArt({ index }) {
 // =====================================================================
 // ItineraryView — deep-dive panel with route picker + budget breakdown
 // =====================================================================
-function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimilar }) {
+function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimilar, onLocked }) {
   const p = itinerary.payload || {};
   const [locking, setLocking] = useState(false);
   const [locked, setLocked]   = useState(p.locked ?? false);
@@ -822,6 +908,8 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         const data = await r.json().catch(() => null);
         setLocked(true);
         if (data?.tripId) setTripId(data.tripId);
+        // Tell the parent so the sidebar shows the destination name immediately
+        if (p.destination) onLocked?.(p.destination);
       }
     } finally { setLocking(false); }
   };

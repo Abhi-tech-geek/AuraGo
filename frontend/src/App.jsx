@@ -42,6 +42,15 @@ export default function App() {
   return <AuthedApp />;
 }
 
+// Sidebar pin state lives in localStorage so it persists between visits.
+const SIDEBAR_KEY = "aurago.sidebarPinned";
+function loadSidebarPinned() {
+  try {
+    const v = localStorage.getItem(SIDEBAR_KEY);
+    return v === null ? true : v === "true";
+  } catch { return true; }
+}
+
 function AuthedApp() {
   const [authSession, setAuthSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -50,7 +59,20 @@ function AuthedApp() {
   const [prefs, setPrefs]             = useState(loadStoredPrefs);
   const [bootError, setBootError]     = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPinned);
   const [compareOpen, setCompareOpen] = useState(false);
+
+  // Persist desktop pin state
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_KEY, String(sidebarPinned)); } catch {}
+  }, [sidebarPinned]);
+
+  // Update one session's title in local state — used after lock so the sidebar
+  // reflects the destination name without a full reload.
+  const updateSessionTitle = useCallback((id, title) => {
+    if (!id || !title) return;
+    setSessions((list) => list.map((s) => s.id === id ? { ...s, title } : s));
+  }, []);
 
   // ---- watch auth ------------------------------------------------
   useEffect(() => {
@@ -235,17 +257,28 @@ function AuthedApp() {
         onDelete={handleDeleteSession}
         onSignOut={handleSignOut}
         onCompare={() => setCompareOpen(true)}
+        pinned={sidebarPinned}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
-      <div className="md:pl-72">
+      <div className={`transition-all duration-300 ease-out ${sidebarPinned ? "md:pl-72" : "md:pl-0"}`}>
         <ChatInterface
           key={activeId} /* remount on switch — clean state */
           sessionId={activeId}
           currentUser={{ id: authSession.user.id }}
           prefs={prefs}
           onPrefsChange={handlePrefsChange}
-          onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenSidebar={() => { setSidebarOpen(true); setSidebarPinned(true); }}
+          onToggleSidebar={() => {
+            // On desktop: flip pinned. On mobile: open the overlay.
+            if (window.matchMedia("(min-width: 768px)").matches) {
+              setSidebarPinned((p) => !p);
+            } else {
+              setSidebarOpen((o) => !o);
+            }
+          }}
+          sidebarPinned={sidebarPinned}
+          onSessionTitleChange={updateSessionTitle}
         />
       </div>
       <TripsCompareModal

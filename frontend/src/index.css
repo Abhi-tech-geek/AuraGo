@@ -90,10 +90,13 @@ body {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.85'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 
-/* deck scroll */
-.deck-scroll { scrollbar-width: thin; scroll-snap-type: x mandatory; }
-.deck-scroll::-webkit-scrollbar { height: 6px; }
-.deck-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+/* deck scroll — hide native scrollbar, navigation is via touch swipe / chevron buttons */
+.deck-scroll {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.deck-scroll::-webkit-scrollbar { display: none; height: 0; }
 .deck-scroll > * { scroll-snap-align: start; }
 
 /* animations */
