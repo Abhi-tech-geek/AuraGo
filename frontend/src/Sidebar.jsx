@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { Plus, Trash2, X, Sparkles, LogOut, BarChart3 } from "lucide-react";
 
 const MAX_SESSIONS = 5;
@@ -59,17 +60,20 @@ export default function Sidebar({
 
         {/* new trip */}
         <div className="px-3 pt-3">
-          <button
+          <motion.button
             onClick={() => {
               if (atLimit) return;
               onNew();
               onClose?.();
             }}
             disabled={atLimit}
+            whileHover={!atLimit ? { scale: 1.02 } : {}}
+            whileTap={!atLimit ? { scale: 0.97 } : {}}
+            transition={{ type: "spring", stiffness: 400, damping: 22 }}
             className="accent-bg accent-glow flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={14} /> New trip
-          </button>
+          </motion.button>
           <p className="mt-2 text-center text-[11px] text-slate-500">
             {sessions.length}/{MAX_SESSIONS} trips
             {atLimit && " · delete one to add more"}
@@ -84,13 +88,21 @@ export default function Sidebar({
             </p>
           ) : (
             <ul className="space-y-1">
-              {sessions.map((s) => {
+              {sessions.map((s, idx) => {
                 const isActive = s.id === activeId;
                 const confirming = confirmDeleteId === s.id;
                 return (
-                  <li key={s.id}>
-                    <div
-                      className={`group flex items-center gap-1 rounded-xl border px-2 py-2 transition-all duration-200 ${
+                  <motion.li
+                    key={s.id}
+                    layout
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.04 * idx, duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <motion.div
+                      whileHover={{ x: 2 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 24 }}
+                      className={`group flex items-center gap-1 rounded-xl border px-2 py-2 transition-colors duration-200 ${
                         isActive
                           ? "accent-border accent-soft-bg shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
                           : "border-transparent hover:border-white/10 hover:bg-white/[0.05]"
@@ -136,8 +148,8 @@ export default function Sidebar({
                           <Trash2 size={13} />
                         </button>
                       )}
-                    </div>
-                  </li>
+                    </motion.div>
+                  </motion.li>
                 );
               })}
             </ul>

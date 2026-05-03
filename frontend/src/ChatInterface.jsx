@@ -301,13 +301,16 @@ export default function ChatInterface({
       <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-8 sm:py-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Always-visible sidebar toggle (works on mobile + desktop) */}
-          <button
+          <motion.button
             onClick={onToggleSidebar ?? onOpenSidebar}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 transition hover:bg-white/[0.08]"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 420, damping: 18 }}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
             aria-label={sidebarPinned ? "Hide trips" : "Show trips"}
           >
             <Menu size={16} />
-          </button>
+          </motion.button>
           {/* Brand block — collapses to icon-only on desktop when sidebar is
               pinned (avoids the duplicate AuraGo) */}
           <div className="accent-bg accent-glow grid h-9 w-9 shrink-0 place-items-center rounded-2xl sm:h-10 sm:w-10">
@@ -335,7 +338,10 @@ export default function ChatInterface({
       </header>
 
       {/* ================= FEED ================= */}
-      <main
+      <motion.main
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8"
         style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom))" }}
       >
@@ -391,7 +397,7 @@ export default function ChatInterface({
             <div ref={bottomRef} aria-hidden="true" />
           </div>
         </LayoutGroup>
-      </main>
+      </motion.main>
 
       {/* ================= COMPOSER ================= */}
       <footer
@@ -438,18 +444,18 @@ export default function ChatInterface({
             rows={1}
             className="accent-ring max-h-40 flex-1 resize-none rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
           />
-          <button
+          <motion.button
             onClick={handleSendInput}
             disabled={sending}
-            className="accent-bg accent-glow grid h-10 w-10 shrink-0 place-items-center rounded-xl transition hover:scale-105 active:scale-95 disabled:opacity-50"
+            whileHover={{ scale: 1.06, rotate: -3 }}
+            whileTap={{ scale: 0.92, rotate: 8 }}
+            transition={{ type: "spring", stiffness: 420, damping: 18 }}
+            className="accent-bg accent-glow grid h-10 w-10 shrink-0 place-items-center rounded-xl disabled:opacity-50"
           >
             <Send size={16} className="text-slate-900" />
-          </button>
+          </motion.button>
         </div>
-        <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-slate-500">
-          {prefs.universal_access ? "Universal access on · " : ""}
-          {prefs.mode === "elite" ? "Elite" : "Sasta"} · ₹{fmtINR(prefs.budget_inr)} · {prefs.party_size} {prefs.party_size === 1 ? "person" : "people"} · {prefs.days} {prefs.days === 1 ? "day" : "days"} · from {prefs.origin}{prefs.start_date ? ` · ${prefs.start_date}` : ""}
-        </p>
+        <ComposerTagline />
       </footer>
 
       <BudgetModal
@@ -501,6 +507,42 @@ function ModeBtn({ active, onClick, children }) {
     >
       {children}
     </button>
+  );
+}
+
+// Rotating one-liner under the composer. New users see a friendly tagline
+// instead of the technical trip-state dump.
+const TAGLINES = [
+  "Plan smarter, travel softer ✨",
+  "Five verified picks. One concierge bot. Zero spreadsheets.",
+  "Hand AuraGo the wheel, or just say where.",
+  "Live-checked plans. Booking links inside.",
+  "From mystery to memory in 30 seconds.",
+];
+
+function ComposerTagline() {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setIdx((i) => (i + 1) % TAGLINES.length);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <div className="mx-auto mt-2 flex h-5 max-w-3xl items-center justify-center overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={idx}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          className="text-[11.5px] text-slate-500"
+        >
+          {TAGLINES[idx]}
+        </motion.p>
+      </AnimatePresence>
+    </div>
   );
 }
 

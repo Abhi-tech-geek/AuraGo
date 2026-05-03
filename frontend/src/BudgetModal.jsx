@@ -3,6 +3,22 @@ import { Accessibility, CalendarDays } from "lucide-react";
 import { budgetHintLabel, fmtINR } from "./lib/tripPlanning";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
+const isoPlusDays = (d) =>
+  new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+
+// Find the next Friday from today (a "weekend" trip).
+function nextWeekendISO() {
+  const today = new Date();
+  const dow = today.getDay(); // 0 = Sun, 5 = Fri
+  const daysUntilFri = (5 - dow + 7) % 7 || 7;
+  return isoPlusDays(daysUntilFri);
+}
+
+const formatPretty = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+};
 
 export default function BudgetModal({ open, initial, onClose, onSubmit }) {
   const [mode, setMode]                 = useState(initial?.mode ?? "elite");
@@ -99,7 +115,36 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
           <label className="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">
             When are you going?
           </label>
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
+
+          {/* Quick-picks for fast date entry */}
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {[
+              { label: "Today",      iso: todayISO() },
+              { label: "Tomorrow",   iso: isoPlusDays(1) },
+              { label: "This weekend", iso: nextWeekendISO() },
+              { label: "In 2 weeks", iso: isoPlusDays(14) },
+              { label: "Next month", iso: isoPlusDays(30) },
+            ].map((q) => {
+              const active = startDate === q.iso;
+              return (
+                <button
+                  key={q.label}
+                  type="button"
+                  onClick={() => setStartDate(active ? "" : q.iso)}
+                  className="rounded-full border px-2.5 py-1 text-[11px] transition"
+                  style={{
+                    borderColor: active ? "var(--accent)" : "rgba(255,255,255,0.10)",
+                    background: active ? "var(--accent-soft)" : "rgba(255,255,255,0.03)",
+                    color: active ? "var(--accent)" : "rgb(203 213 225)",
+                  }}
+                >
+                  {q.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition focus-within:border-white/30">
             <CalendarDays size={16} className="text-slate-400" />
             <input
               type="date"
@@ -108,16 +153,21 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
               onChange={(e) => setStartDate(e.target.value)}
               className="flex-1 bg-transparent text-sm text-slate-100 focus:outline-none [color-scheme:dark]"
             />
-            {startDate && (
-              <button
-                type="button"
-                onClick={() => setStartDate("")}
-                className="text-[11px] text-slate-400 hover:text-slate-200"
-              >Clear</button>
+            {startDate ? (
+              <>
+                <span className="hidden text-[11px] text-slate-400 sm:inline">{formatPretty(startDate)}</span>
+                <button
+                  type="button"
+                  onClick={() => setStartDate("")}
+                  className="text-[11px] text-slate-400 hover:text-slate-200"
+                >Clear</button>
+              </>
+            ) : (
+              <span className="text-[11px] text-slate-500">optional</span>
             )}
           </div>
           <p className="mt-1.5 text-[11px] text-slate-500">
-            Date dene par AuraGo us samay ke mausam (thand / garmi / barish) ke liye plan tune karega.
+            With a date, AuraGo tunes the plan to expected weather (thand / garmi / barish).
           </p>
         </div>
 

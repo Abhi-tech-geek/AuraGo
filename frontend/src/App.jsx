@@ -190,6 +190,8 @@ function AuthedApp() {
       if (error) throw error;
       setSessions((list) => [data, ...list]);
       setActiveId(data.id);
+      // Trip-specific prefs (date) shouldn't carry over from a previous trip.
+      setPrefs((p) => ({ ...p, start_date: "" }));
     } catch (e) {
       console.error("create session failed", e);
       alert(e.message ?? "Could not create trip.");
