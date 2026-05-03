@@ -68,6 +68,34 @@ const serper = async (query) => {
   }
 };
 
+// Serper image search — same auth, separate endpoint. Returns up to `num`
+// photos for a destination so we can show a gallery in the itinerary.
+async function serperImages(query, num = 6) {
+  try {
+    const r = await fetch("https://google.serper.dev/images", {
+      method: "POST",
+      headers: { "X-API-KEY": SERPER_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, num }),
+    });
+    if (!r.ok) return [];
+    const data = await r.json();
+    return (data.images ?? [])
+      .filter((p) => p.imageUrl && p.imageUrl.startsWith("http"))
+      .slice(0, num)
+      .map((p) => ({
+        url: p.imageUrl,
+        thumb: p.thumbnailUrl ?? p.imageUrl,
+        alt: p.title ?? query,
+        source: p.link ?? null,
+        width: p.imageWidth ?? null,
+        height: p.imageHeight ?? null,
+      }));
+  } catch (e) {
+    console.warn(`serper images failed for "${query}":`, e.message);
+    return [];
+  }
+}
+
 
 // =====================================================================
 // 1. Parse user intent
@@ -373,13 +401,20 @@ ${intent.universal_access ? "MUST be wheelchair-friendly. Suggest specific gates
 Verified context: ${fresh._summary}
 Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
 
+  // Run Groq day-plan and Serper image search in parallel — both are bound
+  // by external latency so doing them concurrently saves a couple seconds.
   let plan = { days: [], estimated_cost_inr: est_cost_inr, weather: null, stays: [], packing: [], similar_destinations: [] };
-  try {
-    const text = await groqChat(daySys, dayUser, { temperature: 0.4 });
-    plan = json(text);
-  } catch (e) {
-    console.warn("day-plan generation failed, using stub:", e.message);
+  const [planText, photos] = await Promise.allSettled([
+    groqChat(daySys, dayUser, { temperature: 0.4 }),
+    serperImages(`${destination} travel ${vibe ?? ""}`.trim(), 6),
+  ]);
+  if (planText.status === "fulfilled") {
+    try { plan = json(planText.value); }
+    catch (e) { console.warn("plan JSON parse failed:", e.message); }
+  } else {
+    console.warn("day-plan generation failed:", planText.reason?.message);
   }
+  const photoList = photos.status === "fulfilled" ? photos.value : [];
 
   return {
     card_id,
@@ -397,6 +432,7 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
     stays:   plan.stays   ?? [],
     packing: plan.packing ?? [],
     similar_destinations: plan.similar_destinations ?? [],
+    photos: photoList,
   };
 }
 
@@ -601,6 +637,7 @@ export async function lockTrip(req, res) {
         stays: p.stays,
         packing: p.packing,
         similar_destinations: p.similar_destinations,
+        photos: p.photos,
         travel_date: p.travel_date,
         rag_summary: p.rag_summary,
         hazard: p.hazard,

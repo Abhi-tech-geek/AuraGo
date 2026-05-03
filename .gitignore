@@ -37,3 +37,6 @@ Thumbs.db
 # Misc
 .cache/
 .tmp/
+
+# graphify (knowledge-graph output — locally generated, not source)
+graphify-out/

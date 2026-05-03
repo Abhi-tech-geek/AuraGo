@@ -3,7 +3,7 @@ import {
   Loader2, MapPin, Sparkles, Lock, ShieldCheck, AlertTriangle,
   CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
   Hotel, Building2, Star, CheckSquare, Plane, Train, ExternalLink,
-  Accessibility,
+  Accessibility, Image as ImageIcon, X,
 } from "lucide-react";
 
 const fmtINR = (n) =>
@@ -85,11 +85,13 @@ function PublicTrip({ trip }) {
   const stays = it.stays ?? [];
   const packing = it.packing ?? [];
   const similar = it.similar_destinations ?? [];
+  const photos = it.photos ?? [];
   const accessNotes = trip.accessibility_notes ?? [];
   const totalEstimate = trip.estimated_cost_inr ?? 0;
   const safeNights = Math.max(1, days.length - 1 || 1);
   const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(trip.destination ?? "")}&output=embed`;
   const dateForUrl = it.travel_date || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  const [openPhotoIdx, setOpenPhotoIdx] = useState(null);
 
   const Icon = useMemo(() => weatherIconFor(weather?.feel), [weather]);
 
@@ -204,6 +206,60 @@ function PublicTrip({ trip }) {
               referrerPolicy="no-referrer-when-downgrade"
             />
           </div>
+
+          {/* Photos */}
+          {photos.length > 0 && (
+            <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+              <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <ImageIcon size={11} className="accent-text" /> Photos
+                </div>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent(trip.destination ?? "")}&tbm=isch`}
+                  target="_blank" rel="noreferrer"
+                  className="accent-text hover:underline"
+                >
+                  More on Google ↗
+                </a>
+              </div>
+              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+                {photos.slice(0, 6).map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setOpenPhotoIdx(i)}
+                    className="group relative aspect-[4/3] overflow-hidden bg-white/[0.04]"
+                  >
+                    <img
+                      src={p.thumb || p.url}
+                      alt={p.alt || trip.destination}
+                      loading="lazy"
+                      className="h-full w-full object-cover transition group-hover:opacity-90"
+                    />
+                  </button>
+                ))}
+              </div>
+              {openPhotoIdx !== null && photos[openPhotoIdx] && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur"
+                  onClick={() => setOpenPhotoIdx(null)}
+                >
+                  <img
+                    src={photos[openPhotoIdx].url}
+                    alt={photos[openPhotoIdx].alt || trip.destination}
+                    className="max-h-[85vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <button
+                    onClick={() => setOpenPhotoIdx(null)}
+                    aria-label="Close photo"
+                    className="fixed right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-slate-900/80 text-slate-200 backdrop-blur"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Day plan */}
           {days.length > 0 && (

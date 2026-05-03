@@ -12,7 +12,7 @@ import {
   AlertTriangle, Accessibility, Loader2, MapPin, Plus,
   Sliders, Menu, CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
   Hotel, Star, Plane, Train, Building2, MessageCircle, X, CheckSquare,
-  Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight,
+  Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight, ImageIcon,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
@@ -1069,6 +1069,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         />
       </div>
 
+      {/* PHOTOS */}
+      {p.photos?.length > 0 && <PhotoGallery photos={p.photos} destination={p.destination} />}
+
       {/* ROUTE PICKER */}
       <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -1474,6 +1477,101 @@ function BookingLinks({ origin, destination, startDate, partySize, mode }) {
         <Group Icon={Hotel} title={isSasta ? "Budget stays" : "Premium stays"} links={stayLinks} />
         <Group Icon={Car}   title="Cabs / share rides" links={cabLinks} />
       </div>
+    </div>
+  );
+}
+
+
+// =====================================================================
+// PhotoGallery — destination photos via Serper image search
+// =====================================================================
+function PhotoGallery({ photos, destination }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  const [failed, setFailed]   = useState(() => new Set());
+
+  const visible = photos.filter((_, i) => !failed.has(i));
+  if (visible.length === 0) return null;
+
+  const markFailed = (i) =>
+    setFailed((s) => { const n = new Set(s); n.add(i); return n; });
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <div className="flex items-center gap-1.5">
+          <ImageIcon size={11} className="accent-text" />
+          Photos
+        </div>
+        <a
+          href={`https://www.google.com/search?q=${encodeURIComponent(destination ?? "")}&tbm=isch`}
+          target="_blank" rel="noreferrer"
+          className="accent-text hover:underline"
+        >
+          More on Google ↗
+        </a>
+      </div>
+      <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+        {photos.slice(0, 6).map((p, i) => (
+          failed.has(i) ? null : (
+            <motion.button
+              key={i}
+              onClick={() => setOpenIdx(i)}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="group relative aspect-[4/3] overflow-hidden bg-white/[0.04]"
+            >
+              <img
+                src={p.thumb || p.url}
+                alt={p.alt || destination}
+                loading="lazy"
+                onError={() => markFailed(i)}
+                className="h-full w-full object-cover transition group-hover:opacity-90"
+              />
+            </motion.button>
+          )
+        ))}
+      </div>
+
+      {/* Lightbox overlay */}
+      <AnimatePresence>
+        {openIdx !== null && photos[openIdx] && !failed.has(openIdx) && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setOpenIdx(null)}
+          >
+            <motion.img
+              key={openIdx}
+              src={photos[openIdx].url}
+              alt={photos[openIdx].alt || destination}
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              className="max-h-[85vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+              onError={() => { markFailed(openIdx); setOpenIdx(null); }}
+            />
+            <button
+              onClick={() => setOpenIdx(null)}
+              aria-label="Close photo"
+              className="fixed right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-slate-900/80 text-slate-200 backdrop-blur"
+            >
+              <X size={18} />
+            </button>
+            {photos[openIdx].source && (
+              <a
+                href={photos[openIdx].source}
+                target="_blank" rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-slate-900/80 px-3 py-1.5 text-[11px] text-slate-300 backdrop-blur hover:bg-slate-900"
+              >
+                Open source ↗
+              </a>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
