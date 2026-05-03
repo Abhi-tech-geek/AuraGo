@@ -12,7 +12,7 @@ import {
   AlertTriangle, Accessibility, Loader2, MapPin, Plus,
   Sliders, Menu, CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
   Hotel, Star, Plane, Train, Building2, MessageCircle, X, CheckSquare,
-  Square, Bot, Share2, Check,
+  Square, Bot, Share2, Check, Car,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
@@ -38,6 +38,7 @@ export default function ChatInterface({
   const [loadError, setLoadError] = useState(null);
   const [openCard, setOpenCard]   = useState({});
   const [modalOpen, setModalOpen] = useState(false);
+  const [composerMode, setComposerMode] = useState("mystery"); // "mystery" | "direct"
 
   // Apply mode class to <body> so CSS variables flip globally
   useEffect(() => {
@@ -170,12 +171,73 @@ export default function ChatInterface({
     }
   }, [sending, sessionId, currentUser]);
 
+  // sendDirect — plan ONE destination directly (no mystery deck).
+  // Reused by both the composer's direct mode and the "Similar destinations" chips.
+  const sendDirect = useCallback(async (destinationName) => {
+    const name = destinationName?.trim();
+    if (!name || sending) return;
+    setSending(true);
+
+    const chatLine = {
+      id: `local-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`,
+      session_id: sessionId, author_id: currentUser.id,
+      role: "user", kind: "text",
+      content: `Plan ${name} for me`,
+      payload: null, created_at: new Date().toISOString(),
+    };
+    try {
+      const { data: userMsg } = await supabase.from("messages").insert({
+        session_id: sessionId, author_id: currentUser.id,
+        role: "user", kind: "text", content: chatLine.content,
+      }).select().single();
+      setMessages((m) => m.some((x) => x.id === userMsg?.id) ? m : [...m, userMsg ?? chatLine]);
+    } catch {
+      setMessages((m) => [...m, chatLine]);
+    }
+
+    try {
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData?.session?.access_token;
+      const r = await fetch("/api/chat/direct", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          sessionId, destination: name,
+          startDate: prefs.start_date || null,
+        }),
+        credentials: "include",
+      });
+      if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+      const data = await r.json();
+      if (data.deckMessageId && data.cardId) {
+        setOpenCard((s2) => ({ ...s2, [data.deckMessageId]: data.cardId }));
+      }
+    } catch (e) {
+      console.error("direct plan failed", e);
+      setMessages((m) => [...m, {
+        id: `err-${Date.now()}`,
+        session_id: sessionId, role: "assistant", kind: "text",
+        content: `Couldn't plan that one: ${e.message ?? e}. Try again in a moment.`,
+        created_at: new Date().toISOString(),
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }, [sending, sessionId, currentUser, prefs.start_date]);
+
   const handleSendInput = useCallback(() => {
     const text = input.trim();
     if (!text) { setModalOpen(true); return; }
     setInput("");
-    sendTurn(text);
-  }, [input, sendTurn]);
+    if (composerMode === "direct") {
+      sendDirect(text);
+    } else {
+      sendTurn(text);
+    }
+  }, [input, composerMode, sendTurn, sendDirect]);
 
   const handleModalSubmit = useCallback((next) => {
     setModalOpen(false);
@@ -214,15 +276,11 @@ export default function ChatInterface({
     setOpenCard((s) => { const n = { ...s }; delete n[deckMsgId]; return n; });
   }, []);
 
-  // User clicked a "Similar destinations" chip — re-plan with that destination
+  // User clicked a "Similar destinations" chip → reuse the direct-plan path.
   const handlePickSimilar = useCallback((s) => {
     if (!s?.name) return;
-    const accessTxt = prefs.universal_access ? " with wheelchair access" : "";
-    const modeTxt = prefs.mode === "elite" ? "Elite" : "Sasta";
-    const txt = `Plan a ${modeTxt} trip to ${s.name} from ${prefs.origin} for ${prefs.party_size} ` +
-                `people, ${prefs.days} days, budget ₹${prefs.budget_inr}${accessTxt}.`;
-    sendTurn(txt);
-  }, [prefs, sendTurn]);
+    sendDirect(s.name);
+  }, [sendDirect]);
 
   const findItinerary = useCallback((deckMsgId, cardId) =>
     messages.find(
@@ -334,6 +392,24 @@ export default function ChatInterface({
         className="safe-bottom-pad safe-px fixed bottom-0 left-0 right-0 z-20 px-3 pt-2 sm:px-8"
         style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
       >
+        {/* Composer mode switcher — Mystery vs Direct */}
+        <div className="mx-auto mb-2 flex max-w-3xl justify-center">
+          <div className="flex rounded-full border border-white/10 bg-white/[0.04] p-0.5 text-[11px]">
+            <ComposerModeBtn
+              active={composerMode === "mystery"}
+              onClick={() => setComposerMode("mystery")}
+              icon="🎲"
+              label="Surprise me"
+            />
+            <ComposerModeBtn
+              active={composerMode === "direct"}
+              onClick={() => setComposerMode("direct")}
+              icon="📍"
+              label="I know where"
+            />
+          </div>
+        </div>
+
         <div className="glass-strong mx-auto flex max-w-3xl items-end gap-2 rounded-2xl p-2">
           <button
             onClick={() => setModalOpen(true)}
@@ -350,7 +426,9 @@ export default function ChatInterface({
                 e.preventDefault(); handleSendInput();
               }
             }}
-            placeholder="Tell me about your dream trip… (or hit 'New trip')"
+            placeholder={composerMode === "direct"
+              ? "Type a destination, e.g. Goa or Manali"
+              : "Describe your dream trip… (or pick 'I know where' above)"}
             rows={1}
             className="accent-ring max-h-40 flex-1 resize-none rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
           />
@@ -420,30 +498,69 @@ function ModeBtn({ active, onClick, children }) {
   );
 }
 
+function ComposerModeBtn({ active, onClick, icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition"
+      style={{
+        background: active ? "var(--accent-soft)" : "transparent",
+        color: active ? "var(--accent)" : "rgb(148 163 184)",
+      }}
+    >
+      <span className="text-[13px] leading-none">{icon}</span>
+      <span className="text-[11px] font-medium">{label}</span>
+    </button>
+  );
+}
+
 function Welcome({ loadError, onOpenModal }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      className="glass mt-[12vh] rounded-2xl p-5"
+      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      className="glass relative mt-[10vh] overflow-hidden rounded-2xl p-5"
     >
-      <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-        <Sparkles size={10} className="accent-text" />
-        AuraGo
+      {/* slow drifting accent blob behind the copy */}
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full blur-3xl"
+        style={{ background: "var(--accent-soft)" }}
+        animate={{ x: [0, 20, 0], y: [0, 10, 0] }}
+        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <div className="relative">
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+          <Sparkles size={10} className="accent-text" />
+          AuraGo
+        </div>
+        <motion.p
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.45 }}
+          className="serif mb-2 text-2xl leading-tight"
+        >
+          Hi, I'm AuraGo.
+        </motion.p>
+        <motion.p
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.18, duration: 0.45 }}
+          className="text-[15px] leading-relaxed text-slate-200"
+        >
+          I'll plan your trip in 30 seconds. Click <strong>"New trip"</strong>, type a destination, or describe your dream trip below.
+        </motion.p>
+        <p className="mt-3 text-xs text-slate-400">
+          Try: <em>"Plan an elite trip for 4 from Mumbai with wheelchair access"</em> or just <em>"Goa"</em>.
+        </p>
+        {loadError && <p className="mt-3 text-[12.5px] text-amber-200">{loadError}</p>}
+        <motion.button
+          onClick={onOpenModal}
+          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+          className="accent-bg accent-glow mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-slate-900"
+        >
+          Start a trip →
+        </motion.button>
       </div>
-      <p className="serif mb-2 text-2xl leading-tight">Hi, I'm AuraGo.</p>
-      <p className="text-[15px] leading-relaxed text-slate-200">
-        I'll plan your trip in 30 seconds. Click <strong>"New trip"</strong> or the filter icon below to start.
-      </p>
-      <p className="mt-3 text-xs text-slate-400">
-        Or just type: <em>"Plan an elite trip for 4 from Mumbai with wheelchair access"</em>
-      </p>
-      {loadError && <p className="mt-3 text-[12.5px] text-amber-200">{loadError}</p>}
-      <button
-        onClick={onOpenModal}
-        className="accent-bg accent-glow mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-slate-900"
-      >
-        Start a trip →
-      </button>
     </motion.div>
   );
 }
@@ -452,7 +569,9 @@ function MessageBubble({ message }) {
   const isUser = message.role === "user";
   return (
     <motion.div layout
-      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       className={`flex ${isUser ? "justify-end" : "justify-start"}`}
     >
       <div className={isUser
@@ -535,24 +654,46 @@ function MysteryCard({ card, index, onOpen, disabled }) {
     <motion.button
       layoutId={`card-${card.id}`}
       onClick={onOpen} disabled={disabled}
-      initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.05 * index, duration: 0.4, ease: "easeOut" }}
-      className="card-hover relative flex w-[260px] shrink-0 flex-col gap-3 rounded-2xl border border-white/[0.08] p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 sm:w-[240px]"
+      initial={{ opacity: 0, y: 14, rotateZ: -1.5 }}
+      animate={{ opacity: 1, y: 0, rotateZ: 0 }}
+      whileHover={!disabled ? { y: -4, scale: 1.015 } : {}}
+      whileTap={!disabled ? { scale: 0.985 } : {}}
+      transition={{ delay: 0.07 * index, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+      className="card-hover relative flex w-[260px] shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-white/[0.08] p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 sm:w-[240px]"
       style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))" }}
     >
-      <div className="flex items-center justify-between">
+      {/* Animated decorative glow blob in the background */}
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full blur-2xl"
+        style={{ background: "var(--accent-soft)" }}
+        animate={{ opacity: [0.5, 0.8, 0.5], scale: [1, 1.1, 1] }}
+        transition={{ duration: 4 + index * 0.4, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      <div className="relative flex items-center justify-between">
         <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">
           {card.vibe}
         </span>
         {card.accessibility_ok && <Accessibility size={14} className="accent-text" />}
       </div>
-      <div className="flex h-28 items-center justify-center text-5xl">
-        {card.hint_emoji ?? "✦"}
+
+      {/* Mystery illustration — emoji on a layered "puzzle" background */}
+      <div className="relative flex h-28 items-center justify-center">
+        <PuzzleArt index={index} />
+        <motion.div
+          className="relative z-10 text-5xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 3 + index * 0.3, repeat: Infinity, ease: "easeInOut" }}
+        >
+          {card.hint_emoji ?? "✦"}
+        </motion.div>
       </div>
-      <div className="min-h-[40px] text-[13px] leading-snug text-slate-300">
+
+      <div className="relative min-h-[40px] text-[13px] leading-snug text-slate-300">
         {card.blurb}
       </div>
-      <div className="flex items-center justify-between border-t border-white/[0.06] pt-3 text-[12px]">
+      <div className="relative flex items-center justify-between border-t border-white/[0.06] pt-3 text-[12px]">
         <div className="flex items-center gap-1 text-slate-400">
           <Sparkles size={12} className="accent-text" />
           <span className="font-semibold text-slate-100">
@@ -563,6 +704,33 @@ function MysteryCard({ card, index, onOpen, disabled }) {
         <div className="font-medium text-slate-300">₹{fmtINR(card.est_cost_inr)}</div>
       </div>
     </motion.button>
+  );
+}
+
+// Decorative puzzle-shaped backdrop behind each mystery card emoji.
+// Pure SVG, no images needed. Each card gets a slightly different rotation
+// so the deck feels hand-laid.
+function PuzzleArt({ index }) {
+  const rot = (index * 7) - 12;
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      className="absolute inset-0 m-auto h-24 w-24 opacity-25"
+      style={{ transform: `rotate(${rot}deg)` }}
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={`pa-${index}`} x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.9" />
+          <stop offset="100%" stopColor="var(--accent-2)" stopOpacity="0.4" />
+        </linearGradient>
+      </defs>
+      {/* classic puzzle-piece silhouette */}
+      <path
+        fill={`url(#pa-${index})`}
+        d="M20 30 h22 v-6 a8 8 0 1 1 16 0 v6 h22 v22 h6 a8 8 0 1 1 0 16 h-6 v22 h-22 v-6 a8 8 0 1 0 -16 0 v6 h-22 v-22 h-6 a8 8 0 1 0 0 -16 h6 z"
+      />
+    </svg>
   );
 }
 
@@ -790,22 +958,27 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
               <span>{r.icon}</span>
               <span>{r.label}</span>
               <span className="text-slate-500">·</span>
-              <span className="font-semibold">₹{fmtINR(r.cost_pp)}/p</span>
+              <span className="font-semibold">~ ₹{fmtINR(r.cost_pp)}/p</span>
               {r.recommended && <span className="accent-text ml-1 text-[9px] uppercase">★ Best</span>}
             </button>
           ))}
         </div>
         {route && (
           <div className="rounded-lg bg-white/[0.03] p-3 text-[13px]">
-            <div className="mb-1 flex items-center justify-between">
+            <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-medium">{route.icon} {route.label}</span>
-              <span className="text-slate-400">{route.time} · ₹{fmtINR(totalRouteCost)} for {prefs.party_size}</span>
+              <span className="text-right text-slate-400">
+                {route.time} · approx ₹{fmtINR(totalRouteCost)} for {prefs.party_size}
+              </span>
             </div>
             <p className="mb-2 text-[12px] text-slate-400">{route.via}</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
               {route.pros.map((s, i) => <span key={`p${i}`} className="text-emerald-300">✓ {s}</span>)}
               {route.cons.map((s, i) => <span key={`c${i}`} className="text-amber-300">⚠ {s}</span>)}
             </div>
+            <p className="mt-2 text-[10px] text-slate-500">
+              Prices are AuraGo estimates based on distance & class. Confirm the actual fare on the booking site below.
+            </p>
           </div>
         )}
       </div>
@@ -895,6 +1068,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         destination={p.destination}
         startDate={p.travel_date || prefs.start_date}
         partySize={prefs.party_size}
+        mode={prefs.mode}
       />
 
       {/* SIMILAR DESTINATIONS */}
@@ -1091,47 +1265,85 @@ function PackingChecklist({ items, stickyKey }) {
 // =====================================================================
 // BookingLinks — deeplinks to flights / trains / hotels
 // =====================================================================
-function BookingLinks({ origin, destination, startDate, partySize }) {
+function BookingLinks({ origin, destination, startDate, partySize, mode }) {
   if (!destination) return null;
+  const isSasta = mode === "sasta";
   const dateForUrl = startDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
   const enc = encodeURIComponent;
-  const skyOrigin = (origin ?? "Delhi").toLowerCase().slice(0, 3);
-  const skyDest = destination.toLowerCase().slice(0, 3);
-  const skyDate = dateForUrl.replace(/-/g, "").slice(2); // yyMMdd
-  const flightUrl  = `https://www.skyscanner.co.in/transport/flights/${enc(skyOrigin)}/${enc(skyDest)}/${skyDate}/`;
-  const irctcUrl   = `https://www.confirmtkt.com/rbooking-train-tickets-from-${enc(origin ?? "Delhi")}-to-${enc(destination)}.html`;
-  const bookingUrl = `https://www.booking.com/searchresults.html?ss=${enc(destination)}&checkin=${dateForUrl}&group_adults=${partySize ?? 2}`;
+  const dest = enc(destination);
+  const fromCity = enc(origin ?? "Delhi");
 
-  const Btn = ({ href, Icon, title, subtitle }) => (
-    <a
-      href={href} target="_blank" rel="noreferrer"
-      className="group flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 transition hover:bg-white/[0.05]"
-    >
-      <div className="accent-soft-bg accent-text grid h-10 w-10 shrink-0 place-items-center rounded-xl">
-        <Icon size={16} />
+  // ---- Flights ----
+  const flightLinks = [
+    { name: "Skyscanner",  url: `https://www.skyscanner.co.in/transport/flights-from/${fromCity}/${dest}/?adults=${partySize ?? 1}&adultsv2=${partySize ?? 1}&cabinclass=economy` },
+    { name: "Google Flights", url: `https://www.google.com/travel/flights?q=Flights+from+${fromCity}+to+${dest}+on+${dateForUrl}` },
+    { name: "MakeMyTrip", url: `https://www.makemytrip.com/flight/search?itinerary=${fromCity}-${dest}-${dateForUrl.split("-").reverse().join("/")}&pax=${partySize ?? 1}-0-0&cabinClass=E` },
+  ];
+
+  // ---- Trains ----
+  const trainLinks = [
+    { name: "ConfirmTkt", url: `https://www.confirmtkt.com/rbooking-train-tickets-from-${fromCity}-to-${dest}.html` },
+    { name: "IRCTC",      url: `https://www.irctc.co.in/nget/train-search` },
+  ];
+
+  // ---- Stays (different sites for sasta vs elite) ----
+  const stayLinks = isSasta ? [
+    { name: "Booking.com",   url: `https://www.booking.com/searchresults.html?ss=${dest}&checkin=${dateForUrl}&group_adults=${partySize ?? 2}` },
+    { name: "OYO",           url: `https://www.oyorooms.com/search?location=${dest}&checkin=${dateForUrl}&guests=${partySize ?? 2}` },
+    { name: "Hostelworld",   url: `https://www.hostelworld.com/search?search_keywords=${dest}&date_from=${dateForUrl}` },
+    { name: "MakeMyTrip",    url: `https://www.makemytrip.com/hotels/hotel-listing/?checkin=${dateForUrl}&city=${dest}&roomStayQualifier=${partySize ?? 2}e0e` },
+  ] : [
+    { name: "Booking.com",   url: `https://www.booking.com/searchresults.html?ss=${dest}&checkin=${dateForUrl}&group_adults=${partySize ?? 2}` },
+    { name: "Marriott",      url: `https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=${dest}&fromDate=${dateForUrl}&numberOfAdults=${partySize ?? 2}` },
+    { name: "Taj Hotels",    url: `https://www.tajhotels.com/en-in/search-hotels?location=${dest}` },
+    { name: "Trivago",       url: `https://www.trivago.in/?aDateRange[arr]=${dateForUrl}&iRoomType=7&q=${dest}` },
+  ];
+
+  // ---- Cabs / cab-share ----
+  const cabLinks = [
+    { name: "Uber",       url: `https://m.uber.com/looking?drop[0]={"addr":"${enc(destination)}"}` },
+    { name: "Ola",        url: `https://book.olacabs.com/` },
+    { name: "InDrive",    url: `https://indrive.com/en-in/` },
+    { name: "BlaBlaCar",  url: `https://www.blablacar.in/search?fn=${fromCity}&tn=${dest}&db=${dateForUrl}` },
+  ];
+
+  const Group = ({ Icon, title, links }) => (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <Icon size={11} className="accent-text" />
+        {title}
       </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-medium text-slate-100">{title}</div>
-        <div className="truncate text-[11px] text-slate-400">{subtitle}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {links.map((l) => (
+          <a
+            key={l.name}
+            href={l.url} target="_blank" rel="noreferrer"
+            className="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] text-slate-200 transition hover:border-white/20 hover:bg-white/[0.06]"
+          >
+            {l.name} ↗
+          </a>
+        ))}
       </div>
-      <span className="accent-text text-[14px] opacity-0 transition group-hover:opacity-100">↗</span>
-    </a>
+    </div>
   );
 
   return (
     <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
-      <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-        <Sparkles size={11} className="accent-text" />
-        Book it
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <Sparkles size={11} className="accent-text" />
+          Book it
+        </div>
+        <span className="text-[10px] text-slate-500">
+          Prices below are <span className="text-slate-300">approx</span> · confirm on each site
+        </span>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Btn href={flightUrl}  Icon={Plane}    title="Search flights"  subtitle="Skyscanner" />
-        <Btn href={irctcUrl}   Icon={Train}    title="Search trains"   subtitle="ConfirmTkt / IRCTC" />
-        <Btn href={bookingUrl} Icon={Hotel}    title="Find hotels"     subtitle="Booking.com" />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Group Icon={Plane} title="Flights" links={flightLinks} />
+        <Group Icon={Train} title="Trains"  links={trainLinks} />
+        <Group Icon={Hotel} title={isSasta ? "Budget stays" : "Premium stays"} links={stayLinks} />
+        <Group Icon={Car}   title="Cabs / share rides" links={cabLinks} />
       </div>
-      <p className="mt-2 text-[10px] text-slate-500">
-        Links open the destination + your travel date prefilled. Always verify on the booking site.
-      </p>
     </div>
   );
 }

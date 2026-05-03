@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
-import { chatTurn, expandCard, lockTrip, chatQA, publicTrip } from './chatController.js'
+import { chatTurn, expandCard, lockTrip, chatQA, publicTrip, directTrip } from './chatController.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -52,6 +52,7 @@ app.use(express.static(path.join(__dirname, 'public')))
 app.post('/api/chat/turn', requireAuth, chatTurn)
 app.post('/api/chat/expand-card', requireAuth, expandCard)
 app.post('/api/chat/qa', requireAuth, chatQA)
+app.post('/api/chat/direct', requireAuth, directTrip)
 app.post('/api/trips/lock', requireAuth, lockTrip)
 
 // PUBLIC route — no auth, anyone with the link can view a locked trip

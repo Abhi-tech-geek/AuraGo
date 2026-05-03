@@ -28,7 +28,7 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
   // Sensible default budget when toggling mode
   const handleModeChange = (m) => {
     setMode(m);
-    if (m === "sasta" && budget > 80000) setBudget(40000);
+    if (m === "sasta" && budget > 80000) setBudget(Math.max(5000, Math.min(40000, budget)));
     if (m === "elite" && budget < 80000) setBudget(150000);
   };
 
@@ -131,17 +131,36 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
           </div>
           <input
             type="range"
-            min={20000} max={500000} step={5000}
+            min={5000} max={500000} step={1000}
             value={budget}
             onChange={(e) => setBudget(+e.target.value)}
             className="w-full"
           />
           <div className="mt-2 flex justify-between text-[10px] text-slate-500">
-            <span>₹20k</span><span>₹1L</span><span>₹2.5L</span><span>₹5L</span>
+            <span>₹5k</span><span>₹50k</span><span>₹2L</span><span>₹5L</span>
           </div>
+
+          {/* Hint copy — phrasing depends on whether it's a solo trip */}
           <p className="mt-2 text-xs text-slate-400">
-            ≈ ₹{fmtINR(hint.perPerson)} per person · ₹{fmtINR(hint.perPersonPerDay)}/person/day · {hint.label}
+            {hint.isSolo
+              ? <>≈ ₹{fmtINR(hint.perPersonPerDay)}/day · {hint.label}</>
+              : <>≈ ₹{fmtINR(hint.perPerson)} per person · ₹{fmtINR(hint.perPersonPerDay)}/person/day · {hint.label}</>}
           </p>
+
+          {/* Severity warning chip */}
+          {hint.severity === "very_tight" && (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] p-2.5 text-[12px] text-amber-100">
+              <span className="text-base leading-none">⚠️</span>
+              <div>
+                <div className="font-medium">Heads up — this budget is really tight.</div>
+                <div className="text-amber-200/80">
+                  {partySize > 1
+                    ? `For ${partySize} people across ${days} ${days === 1 ? "day" : "days"}, comfortable plans usually need at least ₹${fmtINR(partySize * days * (mode === "elite" ? 3500 : 1500))}. AuraGo will still try, but expect basic stays + local transport.`
+                    : `AuraGo will lean toward hostels, day-trips and budget eateries. For more options, bump it up a notch.`}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* universal access */}

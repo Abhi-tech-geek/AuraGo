@@ -309,44 +309,15 @@ export async function chatTurn(req, res) {
 }
 
 
-// =====================================================================
-// 5. POST /api/chat/expand-card  — deep-dive an itinerary
-// =====================================================================
-export async function expandCard(req, res) {
-  try {
-    const { sessionId, deckMessageId, cardId, startDate } = req.body;
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: "unauthorized" });
+// Shared helper — builds an itinerary payload for one destination.
+// Used by both expandCard and directTrip.
+async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value_score, card_id, intent, startDate }) {
+  const fresh = await ragVerify(
+    { destination, vibe, ai_value_score, est_cost_inr },
+    intent
+  );
 
-    const { data: existing } = await supabase.from("messages").select("*")
-      .eq("session_id", sessionId)
-      .eq("kind", "itinerary")
-      .eq("parent_message_id", deckMessageId)
-      .contains("payload", { card_id: cardId })
-      .maybeSingle();
-    if (existing) return res.json({ ok: true, messageId: existing.id });
-
-    const { data: deck } = await supabase.from("messages").select("*")
-      .eq("id", deckMessageId).single();
-    const card = (deck?.payload?.cards ?? []).find((c) => c.id === cardId);
-    if (!card) return res.status(404).json({ error: "card not found" });
-
-    const { data: session } = await supabase.from("sessions").select("*")
-      .eq("id", sessionId).single();
-
-    const intent = {
-      mode: session.mode, budget_inr: session.budget_inr,
-      party_size: session.party_size,
-      universal_access: session.universal_access,
-    };
-    const fresh = await ragVerify(
-      { destination: card._destination, vibe: card.vibe,
-        ai_value_score: card.ai_value_score,
-        est_cost_inr: card.est_cost_inr },
-      intent
-    );
-
-    const daySys = `Build a detailed travel itinerary as JSON.
+  const daySys = `Build a detailed travel itinerary as JSON.
 Return JSON only:
 {
  "days": [{"day":1,"title":"...","activities":["...","..."]}],
@@ -383,50 +354,93 @@ Return JSON only:
 Rules:
 - "stays" MUST include 4 options at different price points within the user's budget mode.
   For sasta mode: lean toward hostels/budget hotels/homestays. For elite: hotels/resorts/villas.
+  Tune to the party size — if 1 person traveling, suggest options good for solo travellers.
 - "packing" MUST be 8-12 items, ALWAYS in English. Adapt to the weather and activities.
-- "similar_destinations" MUST include 4 distinct Indian places that match the same vibe
-  (e.g. for a beach destination: other beaches; for a mountain town: other mountain towns).
+- "similar_destinations" MUST include 4 distinct Indian places that match the same vibe.
   Do NOT repeat the main destination itself.
 - The "weather" object is REQUIRED. Estimate from typical climate on the given travel date;
   if no date, use current month.`;
 
-    const travelDateLine = startDate
-      ? `Travel date: ${startDate}`
-      : `Travel date: not specified — assume the current month.`;
+  const travelDateLine = startDate
+    ? `Travel date: ${startDate}`
+    : `Travel date: not specified — assume the current month.`;
 
-    const dayUser = `Destination: ${card._destination} (${card.vibe})
+  const dayUser = `Destination: ${destination} (${vibe})
 ${travelDateLine}
-Party size: ${session.party_size}
-Budget (whole party): ₹${session.budget_inr}
-${session.universal_access ? "MUST be wheelchair-friendly. Suggest specific gates, ramps, and lower-crowd entry points." : ""}
+Party size: ${intent.party_size}${intent.party_size === 1 ? " (solo traveller)" : ""}
+Budget (whole party): ₹${intent.budget_inr}
+${intent.universal_access ? "MUST be wheelchair-friendly. Suggest specific gates, ramps, and lower-crowd entry points." : ""}
 Verified context: ${fresh._summary}
 Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
 
-    let plan = { days: [], estimated_cost_inr: card.est_cost_inr, weather: null, stays: [], packing: [], similar_destinations: [] };
-    try {
-      const text = await groqChat(daySys, dayUser, { temperature: 0.4 });
-      plan = json(text);
-    } catch (e) {
-      console.warn("day-plan generation failed, using stub:", e.message);
-    }
+  let plan = { days: [], estimated_cost_inr: est_cost_inr, weather: null, stays: [], packing: [], similar_destinations: [] };
+  try {
+    const text = await groqChat(daySys, dayUser, { temperature: 0.4 });
+    plan = json(text);
+  } catch (e) {
+    console.warn("day-plan generation failed, using stub:", e.message);
+  }
 
-    const payload = {
-      card_id: card.id,
+  return {
+    card_id,
+    destination,
+    vibe,
+    days: plan.days ?? [],
+    estimated_cost_inr: plan.estimated_cost_inr ?? est_cost_inr,
+    rag_verified: true,
+    rag_summary: fresh._summary,
+    hazard: fresh._verdict === "hazard" ? fresh._reason : null,
+    accessibility_notes: fresh._access_notes,
+    citations: fresh._citations,
+    travel_date: startDate || null,
+    weather: plan.weather ?? null,
+    stays:   plan.stays   ?? [],
+    packing: plan.packing ?? [],
+    similar_destinations: plan.similar_destinations ?? [],
+  };
+}
+
+
+// =====================================================================
+// 5. POST /api/chat/expand-card  — deep-dive an itinerary from a deck
+// =====================================================================
+export async function expandCard(req, res) {
+  try {
+    const { sessionId, deckMessageId, cardId, startDate } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const { data: existing } = await supabase.from("messages").select("*")
+      .eq("session_id", sessionId)
+      .eq("kind", "itinerary")
+      .eq("parent_message_id", deckMessageId)
+      .contains("payload", { card_id: cardId })
+      .maybeSingle();
+    if (existing) return res.json({ ok: true, messageId: existing.id });
+
+    const { data: deck } = await supabase.from("messages").select("*")
+      .eq("id", deckMessageId).single();
+    const card = (deck?.payload?.cards ?? []).find((c) => c.id === cardId);
+    if (!card) return res.status(404).json({ error: "card not found" });
+
+    const { data: session } = await supabase.from("sessions").select("*")
+      .eq("id", sessionId).single();
+
+    const intent = {
+      mode: session.mode, budget_inr: session.budget_inr,
+      party_size: session.party_size,
+      universal_access: session.universal_access,
+    };
+
+    const payload = await buildItineraryPayload({
       destination: card._destination,
       vibe: card.vibe,
-      days: plan.days ?? [],
-      estimated_cost_inr: plan.estimated_cost_inr ?? card.est_cost_inr,
-      rag_verified: true,
-      rag_summary: fresh._summary,
-      hazard: fresh._verdict === "hazard" ? fresh._reason : null,
-      accessibility_notes: fresh._access_notes,
-      citations: fresh._citations,
-      travel_date: startDate || null,
-      weather: plan.weather ?? null,
-      stays:   plan.stays   ?? [],
-      packing: plan.packing ?? [],
-      similar_destinations: plan.similar_destinations ?? [],
-    };
+      est_cost_inr: card.est_cost_inr,
+      ai_value_score: card.ai_value_score,
+      card_id: card.id,
+      intent,
+      startDate,
+    });
 
     const { data: itinMsg, error: itinErr } = await supabase.from("messages").insert({
       session_id: sessionId, role: "assistant", kind: "itinerary",
@@ -440,6 +454,117 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
   } catch (e) {
     console.error("expandCard error", e);
     return res.status(500).json({ error: "expand failed", detail: e.message });
+  }
+}
+
+
+// =====================================================================
+// 5b. POST /api/chat/direct  — skip the mystery deck, plan ONE destination
+// =====================================================================
+// Used when the user already knows where they want to go (typing a city
+// directly, or clicking a "Similar destinations" chip on an open itinerary).
+// We synthesize a 1-card deck so the regular UI flow keeps working, then
+// build the full itinerary right away.
+export async function directTrip(req, res) {
+  try {
+    const { sessionId, destination, startDate } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    if (!destination?.trim()) return res.status(400).json({ error: "missing destination" });
+
+    const { data: session, error: sErr } = await supabase
+      .from("sessions").select("*").eq("id", sessionId).single();
+    if (sErr || !session) return res.status(404).json({ error: "session not found" });
+
+    const intent = {
+      mode: session.mode ?? "elite",
+      budget_inr: session.budget_inr ?? 50000,
+      party_size: session.party_size ?? 2,
+      universal_access: session.universal_access ?? false,
+      must_haves: [], avoid: [],
+    };
+
+    // Ask Groq for a quick 1-card vibe + cost estimate so the deck looks normal
+    let card = {
+      destination: destination.trim(),
+      vibe: "Custom Pick",
+      ai_value_score: 8.5,
+      est_cost_inr: Math.round(intent.budget_inr * 0.7),
+      blurb: `Planned for your trip to ${destination.trim()}.`,
+      hint_emoji: "📍",
+    };
+    try {
+      const sys = `Return JSON only describing this destination as a card:
+{
+ "vibe": "<2-3 word vibe like 'Beach Bliss' or 'Royal Heritage'>",
+ "ai_value_score": <number 1-10>,
+ "est_cost_inr": <int — total spend for the whole party, excluding travel>,
+ "blurb": "<<= 100 chars one-line vibe; do NOT include the destination name>",
+ "hint_emoji": "<one emoji>"
+}`;
+      const text = await groqChat(sys, `Destination: ${destination}\nMode: ${intent.mode}\nBudget: ₹${intent.budget_inr}\nParty size: ${intent.party_size}`, { temperature: 0.4 });
+      const meta = json(text);
+      card = { ...card, ...meta, destination: destination.trim() };
+    } catch (e) {
+      console.warn("direct meta gen failed, using fallback:", e.message);
+    }
+
+    const cardId = cryptoRandomId();
+    const cardForDeck = {
+      id: cardId,
+      vibe: card.vibe,
+      ai_value_score: card.ai_value_score,
+      est_cost_inr: card.est_cost_inr,
+      blurb: card.blurb,
+      hint_emoji: card.hint_emoji,
+      accessibility_ok: true,
+      _destination: card.destination,
+      _summary: `${card.destination} matches your ${intent.mode} brief.`,
+      _access_notes: [],
+      _citations: [],
+      _hazard: null,
+    };
+
+    const intro = `Here's a custom plan for ${card.destination}.`;
+    const { data: deckMsg, error: deckErr } = await supabase.from("messages").insert({
+      session_id: sessionId, role: "assistant", kind: "mystery_deck",
+      content: intro,
+      payload: { intro, cards: [cardForDeck], direct: true },
+    }).select().single();
+    if (deckErr) throw deckErr;
+
+    await supabase.from("sessions")
+      .update({ last_deck: { message_id: deckMsg.id, cards: [cardForDeck] } })
+      .eq("id", sessionId);
+
+    // Build the full itinerary and persist it tied to that deck
+    const payload = await buildItineraryPayload({
+      destination: card.destination,
+      vibe: card.vibe,
+      est_cost_inr: card.est_cost_inr,
+      ai_value_score: card.ai_value_score,
+      card_id: cardId,
+      intent,
+      startDate,
+    });
+
+    const { data: itinMsg, error: itinErr } = await supabase.from("messages").insert({
+      session_id: sessionId, role: "assistant", kind: "itinerary",
+      parent_message_id: deckMsg.id,
+      content: `Itinerary for ${card.destination}`,
+      payload,
+    }).select().single();
+    if (itinErr) throw itinErr;
+
+    return res.json({
+      ok: true,
+      deckMessageId: deckMsg.id,
+      itineraryMessageId: itinMsg.id,
+      cardId,
+    });
+  } catch (e) {
+    console.error("directTrip error", e);
+    return res.status(500).json({ error: "direct plan failed", detail: e.message });
   }
 }
 

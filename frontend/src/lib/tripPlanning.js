@@ -130,22 +130,49 @@ export function computeRoutes({ origin, destination, mode, totalBudget, partySiz
 }
 
 // =====================================================================
-// Smart per-person/day budget label for the modal hint
+// Smart per-person/day budget label for the modal hint.
+// Returns severity so the UI can colour-code warnings.
 // =====================================================================
 export function budgetHintLabel({ mode, budget, partySize, days }) {
-  const pp  = Math.round(budget / Math.max(1, partySize));
-  const ppd = Math.round(pp / Math.max(1, days));
+  const safeParty = Math.max(1, partySize);
+  const safeDays  = Math.max(1, days);
+  const pp  = Math.round(budget / safeParty);
+  const ppd = Math.round(pp / safeDays);
+  const isSolo = safeParty === 1;
+
+  // severity: "ok" | "tight" | "very_tight"
+  let severity = "ok";
   let label = "";
   if (mode === "elite") {
-    if (ppd < 3000) label = "tight for elite — consider sasta mode or more budget";
-    else if (ppd < 8000) label = "good for mid-tier elite trips";
-    else label = "comfortable for elite trips";
+    if (ppd < 3000) {
+      severity = "very_tight";
+      label = isSolo
+        ? "very tight for an elite solo trip — consider Sasta mode or more budget"
+        : "very tight for elite — consider Sasta mode or more budget";
+    } else if (ppd < 8000) {
+      severity = "tight";
+      label = "good for mid-tier elite trips";
+    } else {
+      label = "comfortable for elite trips";
+    }
   } else {
-    if (ppd < 1000) label = "very tight — hostels & local transport only";
-    else if (ppd < 2500) label = "solid for backpacker style";
-    else label = "comfortable for sasta trips";
+    if (ppd < 800) {
+      severity = "very_tight";
+      label = isSolo
+        ? "really tight even solo — try a closer destination or 1-2 days"
+        : `really tight for ${safeParty} people — split rooms, public transport only`;
+    } else if (ppd < 1500) {
+      severity = "tight";
+      label = isSolo
+        ? "doable solo with hostels + local food"
+        : "tight — hostels and shared transport";
+    } else if (ppd < 2500) {
+      label = "solid for backpacker style";
+    } else {
+      label = "comfortable for sasta trips";
+    }
   }
-  return { perPerson: pp, perPersonPerDay: ppd, label };
+  return { perPerson: pp, perPersonPerDay: ppd, label, severity, isSolo };
 }
 
 export const fmtINR = (n) =>
