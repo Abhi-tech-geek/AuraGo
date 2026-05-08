@@ -20,7 +20,7 @@ const formatPretty = (iso) => {
   return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 };
 
-export default function BudgetModal({ open, initial, onClose, onSubmit }) {
+export default function BudgetModal({ open, initial, destinationHint, onClose, onSubmit }) {
   const [mode, setMode]                 = useState(initial?.mode ?? "elite");
   const [origin, setOrigin]             = useState(initial?.origin ?? "Delhi");
   const [partySize, setPartySize]       = useState(initial?.party_size ?? 4);
@@ -62,10 +62,24 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
     >
       <div className="aura-modal glass-strong rounded-3xl p-5 sm:p-8">
         <div className="mb-5">
-          <h2 className="serif text-3xl">Tell me your trip</h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Main aapke jawab se 5 verified options bana ke dikhaunga.
-          </p>
+          {destinationHint ? (
+            <>
+              <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-wider text-slate-300">
+                <span className="text-sm">📍</span> Destination
+              </div>
+              <h2 className="serif text-3xl">Trip to {destinationHint}</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Confirm a few details so AuraGo plans the right kind of trip.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2 className="serif text-3xl">Tell me your trip</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                I'll generate 5 verified options based on what you pick here.
+              </p>
+            </>
+          )}
         </div>
 
         {/* mode */}
@@ -249,7 +263,7 @@ export default function BudgetModal({ open, initial, onClose, onSubmit }) {
             })}
             className="accent-bg accent-glow flex-1 rounded-xl py-3 text-sm font-semibold text-slate-900"
           >
-            Find my 5 options →
+            {destinationHint ? `Plan ${destinationHint} →` : "Find my 5 options →"}
           </button>
         </div>
       </div>

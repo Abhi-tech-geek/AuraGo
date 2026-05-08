@@ -41,6 +41,10 @@ export default function ChatInterface({
   const [openCard, setOpenCard]   = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [composerMode, setComposerMode] = useState("mystery"); // "mystery" | "direct"
+  // When user types a destination in direct mode, we open the modal first so
+  // they can confirm budget / people / days / date — then we plan with those
+  // confirmed prefs instead of using stale session defaults.
+  const [pendingDestination, setPendingDestination] = useState(null);
 
   // Apply mode class to <body> so CSS variables flip globally
   useEffect(() => {
@@ -175,9 +179,12 @@ export default function ChatInterface({
 
   // sendDirect — plan ONE destination directly (no mystery deck).
   // Reused by both the composer's direct mode and the "Similar destinations" chips.
-  const sendDirect = useCallback(async (destinationName) => {
+  // `prefsOverride` lets callers (e.g. the modal submit) hand in the
+  // just-confirmed prefs synchronously, sidestepping React render staleness.
+  const sendDirect = useCallback(async (destinationName, prefsOverride) => {
     const name = destinationName?.trim();
     if (!name || sending) return;
+    const effective = prefsOverride ?? prefs;
     setSending(true);
 
     const chatLine = {
@@ -208,7 +215,15 @@ export default function ChatInterface({
         },
         body: JSON.stringify({
           sessionId, destination: name,
-          startDate: prefs.start_date || null,
+          startDate: effective.start_date || null,
+          // Send the *just-confirmed* intent so the backend doesn't race
+          // against the session-row update.
+          intent: {
+            mode: effective.mode,
+            budget_inr: effective.budget_inr,
+            party_size: effective.party_size,
+            universal_access: effective.universal_access,
+          },
         }),
         credentials: "include",
       });
@@ -228,24 +243,34 @@ export default function ChatInterface({
     } finally {
       setSending(false);
     }
-  }, [sending, sessionId, currentUser, prefs.start_date]);
+  }, [sending, sessionId, currentUser, prefs]);
 
   const handleSendInput = useCallback(() => {
     const text = input.trim();
     if (!text) { setModalOpen(true); return; }
     setInput("");
     if (composerMode === "direct") {
-      sendDirect(text);
+      // For direct destinations, open the budget modal first so the user
+      // confirms budget / people / days / date — then plan.
+      setPendingDestination(text);
+      setModalOpen(true);
     } else {
       sendTurn(text);
     }
-  }, [input, composerMode, sendTurn, sendDirect]);
+  }, [input, composerMode, sendTurn]);
 
   const handleModalSubmit = useCallback((next) => {
     setModalOpen(false);
     onPrefsChange?.(next);
-    sendTurn(promptFromPrefs(next));
-  }, [onPrefsChange, sendTurn]);
+    if (pendingDestination) {
+      const dest = pendingDestination;
+      setPendingDestination(null);
+      // Pass `next` directly so we don't read stale prefs from closure.
+      sendDirect(dest, next);
+    } else {
+      sendTurn(promptFromPrefs(next));
+    }
+  }, [onPrefsChange, sendTurn, sendDirect, pendingDestination]);
 
   const handleModeToggle = useCallback((m) => {
     if (m === prefs.mode) return;
@@ -461,7 +486,8 @@ export default function ChatInterface({
       <BudgetModal
         open={modalOpen}
         initial={prefs}
-        onClose={() => setModalOpen(false)}
+        destinationHint={pendingDestination}
+        onClose={() => { setModalOpen(false); setPendingDestination(null); }}
         onSubmit={handleModalSubmit}
       />
 

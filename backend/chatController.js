@@ -503,7 +503,7 @@ export async function expandCard(req, res) {
 // build the full itinerary right away.
 export async function directTrip(req, res) {
   try {
-    const { sessionId, destination, startDate } = req.body;
+    const { sessionId, destination, startDate, intent: bodyIntent } = req.body;
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
     if (!destination?.trim()) return res.status(400).json({ error: "missing destination" });
@@ -512,13 +512,26 @@ export async function directTrip(req, res) {
       .from("sessions").select("*").eq("id", sessionId).single();
     if (sErr || !session) return res.status(404).json({ error: "session not found" });
 
+    // Prefer the intent the client just confirmed (avoids a race with the
+    // session-row DB update). Fall back to the persisted session row.
     const intent = {
-      mode: session.mode ?? "elite",
-      budget_inr: session.budget_inr ?? 50000,
-      party_size: session.party_size ?? 2,
-      universal_access: session.universal_access ?? false,
+      mode:             bodyIntent?.mode             ?? session.mode             ?? "elite",
+      budget_inr:       bodyIntent?.budget_inr       ?? session.budget_inr       ?? 50000,
+      party_size:       bodyIntent?.party_size       ?? session.party_size       ?? 2,
+      universal_access: bodyIntent?.universal_access ?? session.universal_access ?? false,
       must_haves: [], avoid: [],
     };
+
+    // Persist the just-confirmed intent so subsequent operations on this session
+    // (e.g. expand-card on similar destinations) read the updated row.
+    if (bodyIntent) {
+      await supabase.from("sessions").update({
+        mode: intent.mode,
+        budget_inr: intent.budget_inr,
+        party_size: intent.party_size,
+        universal_access: intent.universal_access,
+      }).eq("id", sessionId);
+    }
 
     // Ask Groq for a quick 1-card vibe + cost estimate so the deck looks normal
     let card = {
