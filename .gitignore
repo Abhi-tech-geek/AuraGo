@@ -38,8 +38,5 @@ Thumbs.db
 .cache/
 .tmp/
 
-# graphify (knowledge-graph output — locally generated, not source)
-graphify-out/
-
 # Claude Code internal directories (worktrees, agents, sessions, settings)
 .claude/
