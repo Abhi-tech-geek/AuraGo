@@ -17,21 +17,25 @@ import {
   UserPlus, Users, ExternalLink, Map as MapIcon,
 } from "lucide-react";
 
-// Map of card "hint_category" → lucide icon. Used by MysteryCard so the deck
-// gets clean iconography instead of a raw emoji. Add new categories here
-// in sync with HINT_CATEGORIES in backend/chatController.js.
-const CATEGORY_ICON = {
-  mountain: Mountain,
-  beach: Waves,
-  desert: Sun,
-  forest: TreePine,
-  lake: Droplets,
-  heritage: Castle,
-  city: Building2,
-  pilgrim: Church,
-  wildlife: PawPrint,
-  adventure: Compass,
+// Map of backend "hint_category" → display label rendered in the mystery
+// card's text-only hint area. Sync with HINT_CATEGORIES in
+// backend/chatController.js. Falls back to "Mystery" if backend returns
+// an unknown category.
+const CATEGORY_LABEL = {
+  mountain:  "Mountain",
+  beach:     "Coast",
+  desert:    "Desert",
+  forest:    "Forest",
+  lake:      "Lakes",
+  heritage:  "Heritage",
+  city:      "City",
+  pilgrim:   "Sacred",
+  wildlife:  "Wildlife",
+  adventure: "Adventure",
 };
+function labelForHint(category) {
+  return CATEGORY_LABEL[category] ?? "Mystery";
+}
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";
@@ -876,24 +880,29 @@ function MysteryCard({ card, index, onOpen, disabled }) {
         {card.accessibility_ok && <Accessibility size={14} className="accent-text" />}
       </div>
 
-      {/* Mystery illustration — lucide icon on the puzzle backdrop. Cleaner
-          than emoji and matches the rest of the app's iconography. */}
-      <div className="relative flex h-28 items-center justify-center">
-        <PuzzleArt index={index} />
-        <motion.div
-          className="accent-text relative z-10 grid h-14 w-14 place-items-center rounded-full border border-white/[0.08]"
-          style={{
-            background: "radial-gradient(circle at 30% 30%, var(--accent-soft), rgba(255,255,255,0.02))",
-            boxShadow: "0 6px 22px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
-          }}
-          animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 3 + index * 0.3, repeat: Infinity, ease: "easeInOut" }}
+      {/* Text-only mystery hint. We layer three elements:
+            1. a huge faded ordinal numeral (01..08) as a watermark
+            2. the category as a serif italic word in accent colour
+            3. a thin accent rule underneath
+          Together they keep the card feeling premium without an icon. */}
+      <div className="relative flex h-28 items-center justify-center overflow-hidden">
+        <span
+          aria-hidden="true"
+          className="serif pointer-events-none absolute inset-0 flex items-center justify-center text-[112px] leading-none text-white/[0.035] select-none"
         >
-          {(() => {
-            const Icon = CATEGORY_ICON[card.hint_category] ?? Sparkles;
-            return <Icon size={26} strokeWidth={1.6} />;
-          })()}
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <motion.div
+          className="accent-text relative serif italic text-3xl sm:text-[2.25rem] leading-none tracking-tight"
+          animate={{ y: [0, -2, 0] }}
+          transition={{ duration: 4 + index * 0.25, repeat: Infinity, ease: "easeInOut" }}
+        >
+          {labelForHint(card.hint_category)}
         </motion.div>
+        <span
+          aria-hidden="true"
+          className="accent-bg absolute bottom-3 h-px w-10 opacity-70"
+        />
       </div>
 
       <div className="relative min-h-[40px] text-[13px] leading-snug text-slate-300">

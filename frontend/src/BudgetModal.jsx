@@ -106,7 +106,7 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
             <>
               <h2 className="serif text-3xl">Tell me your trip</h2>
               <p className="mt-1 text-sm text-slate-400">
-                I'll generate 5 verified options based on what you pick here.
+                I'll generate 8 verified options based on what you pick here.
               </p>
             </>
           )}
@@ -384,7 +384,7 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
               ? `Plan ${destinationHint} →`
               : (multiStop && normalizeStops(stopsText).length >= 2
                   ? `Plan my ${normalizeStops(stopsText).length}-stop route →`
-                  : "Find my 5 options →")}
+                  : "Find my 8 options →")}
           </button>
         </div>
       </div>
