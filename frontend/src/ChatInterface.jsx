@@ -119,7 +119,10 @@ export default function ChatInterface({
   }, [messages.length, sending, openCard]);
 
   // ---- send a turn (free text or modal-built prompt) ---------------
-  const sendTurn = useCallback(async (text) => {
+  // `intentOverride` short-circuits the backend's Groq-based intent parser
+  // when the prompt was synthesized from the BudgetModal (we already know
+  // the structured values). Saves ~1-2s per turn.
+  const sendTurn = useCallback(async (text, intentOverride) => {
     if (!text || sending) return;
     setSending(true);
 
@@ -153,7 +156,10 @@ export default function ChatInterface({
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ sessionId, prompt: text }),
+        body: JSON.stringify({
+          sessionId, prompt: text,
+          ...(intentOverride ? { intent: intentOverride } : {}),
+        }),
         credentials: "include",
       });
       if (!r.ok) {
@@ -223,6 +229,9 @@ export default function ChatInterface({
             budget_inr: effective.budget_inr,
             party_size: effective.party_size,
             universal_access: effective.universal_access,
+            country: effective.country,
+            has_passport: effective.has_passport,
+            route_stops: Array.isArray(effective.route_stops) ? effective.route_stops : [],
           },
         }),
         credentials: "include",
@@ -262,13 +271,30 @@ export default function ChatInterface({
   const handleModalSubmit = useCallback((next) => {
     setModalOpen(false);
     onPrefsChange?.(next);
+    const stops = Array.isArray(next.route_stops)
+      ? next.route_stops.filter(Boolean)
+      : [];
     if (pendingDestination) {
       const dest = pendingDestination;
       setPendingDestination(null);
       // Pass `next` directly so we don't read stale prefs from closure.
       sendDirect(dest, next);
+    } else if (stops.length >= 2) {
+      // Multi-stop: skip the mystery deck entirely — there's nothing to "pick"
+      // because the user already told us the route. Build a chained itinerary.
+      const joined = stops.join(" · ");
+      sendDirect(joined, next);
     } else {
-      sendTurn(promptFromPrefs(next));
+      // Fast-path: hand the structured intent to the backend so it can skip
+      // the Groq parseIntent round-trip (~1-2s saved per turn).
+      sendTurn(promptFromPrefs(next), {
+        mode: next.mode,
+        budget_inr: next.budget_inr,
+        party_size: next.party_size,
+        universal_access: next.universal_access,
+        country: next.country,
+        has_passport: next.has_passport,
+      });
     }
   }, [onPrefsChange, sendTurn, sendDirect, pendingDestination]);
 
@@ -1052,6 +1078,28 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         </div>
       </div>
 
+      {/* multi-stop route bar */}
+      {Array.isArray(p.route_stops) && p.route_stops.length >= 2 && (
+        <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
+          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+            <Sparkles size={11} className="accent-text" />
+            Route · {p.route_stops.length} stops
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {p.route_stops.map((stop, i) => (
+              <span key={`${stop}-${i}`} className="flex items-center gap-1.5">
+                <span className="accent-soft-bg accent-text rounded-full px-2.5 py-1 text-[12px] font-medium">
+                  {stop}
+                </span>
+                {i < p.route_stops.length - 1 && (
+                  <span className="text-slate-500">→</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* live verified */}
       {p.rag_verified && p.rag_summary && (
         <div className="accent-border mb-4 flex items-start gap-2 rounded-lg border bg-white/[0.025] p-3 text-[13px] text-slate-300">
@@ -1185,9 +1233,22 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
                 <span className="text-slate-300">{d.title}</span>
               </div>
               <ul className="space-y-0.5 text-[13px] text-slate-300">
-                {(d.activities ?? d.acts ?? []).map((a, i) => (
-                  <li key={i} className="flex gap-2"><span className="accent-text">•</span>{a}</li>
-                ))}
+                {(d.activities ?? d.acts ?? []).map((a, i) => {
+                  // Clickable → opens Google Maps search for the activity at
+                  // the destination. No geocoding needed; cheap UX win.
+                  const q = encodeURIComponent(`${a} ${p.destination ?? ""}`.trim());
+                  return (
+                    <li key={i} className="flex gap-2">
+                      <span className="accent-text">•</span>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${q}`}
+                        target="_blank" rel="noreferrer"
+                        className="hover:accent-text hover:underline decoration-dotted underline-offset-2"
+                        title="Find on Google Maps"
+                      >{a}</a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
@@ -1228,6 +1289,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         startDate={p.travel_date || prefs.start_date}
         partySize={prefs.party_size}
         mode={prefs.mode}
+        homeCountry={prefs.country}
       />
 
       {/* SIMILAR DESTINATIONS */}
@@ -1424,7 +1486,7 @@ function PackingChecklist({ items, stickyKey }) {
 // =====================================================================
 // BookingLinks — deeplinks to flights / trains / hotels
 // =====================================================================
-function BookingLinks({ origin, destination, startDate, partySize, mode }) {
+function BookingLinks({ origin, destination, startDate, partySize, mode, homeCountry }) {
   if (!destination) return null;
   const isSasta = mode === "sasta";
   const dateForUrl = startDate || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
@@ -1432,38 +1494,66 @@ function BookingLinks({ origin, destination, startDate, partySize, mode }) {
   const dest = enc(destination);
   const fromCity = enc(origin ?? "Delhi");
 
+  // Destination is "domestic" if the home country name appears in the string.
+  // (LLM is instructed to format names as "City, Region, Country".)
+  const home = (homeCountry ?? "India").toLowerCase();
+  const isIndia = home === "india";
+  const isDomestic =
+    !!destination &&
+    destination.toLowerCase().includes(home);
+  const showTrains = isDomestic && isIndia;
+  const showIndiaOnlySites = isDomestic && isIndia;
+
   // ---- Flights ----
   const flightLinks = [
-    { name: "Skyscanner",  url: `https://www.skyscanner.co.in/transport/flights-from/${fromCity}/${dest}/?adults=${partySize ?? 1}&adultsv2=${partySize ?? 1}&cabinclass=economy` },
+    { name: "Skyscanner",  url: `https://www.skyscanner.net/transport/flights-from/${fromCity}/${dest}/?adults=${partySize ?? 1}&adultsv2=${partySize ?? 1}&cabinclass=economy` },
     { name: "Google Flights", url: `https://www.google.com/travel/flights?q=Flights+from+${fromCity}+to+${dest}+on+${dateForUrl}` },
-    { name: "MakeMyTrip", url: `https://www.makemytrip.com/flight/search?itinerary=${fromCity}-${dest}-${dateForUrl.split("-").reverse().join("/")}&pax=${partySize ?? 1}-0-0&cabinClass=E` },
+    { name: "Kayak",        url: `https://www.kayak.com/flights/${fromCity}-${dest}/${dateForUrl}?sort=bestflight_a` },
+    ...(showIndiaOnlySites ? [{
+      name: "MakeMyTrip",
+      url: `https://www.makemytrip.com/flight/search?itinerary=${fromCity}-${dest}-${dateForUrl.split("-").reverse().join("/")}&pax=${partySize ?? 1}-0-0&cabinClass=E`,
+    }] : []),
   ];
 
-  // ---- Trains ----
-  const trainLinks = [
+  // ---- Trains (India only — most regions don't have a comparable system) ----
+  const trainLinks = showTrains ? [
     { name: "ConfirmTkt", url: `https://www.confirmtkt.com/rbooking-train-tickets-from-${fromCity}-to-${dest}.html` },
     { name: "IRCTC",      url: `https://www.irctc.co.in/nget/train-search` },
-  ];
+  ] : null;
 
-  // ---- Stays (different sites for sasta vs elite) ----
-  const stayLinks = isSasta ? [
+  // ---- Stays (different sites for sasta vs elite, and global vs India) ----
+  const globalStays = isSasta ? [
     { name: "Booking.com",   url: `https://www.booking.com/searchresults.html?ss=${dest}&checkin=${dateForUrl}&group_adults=${partySize ?? 2}` },
-    { name: "OYO",           url: `https://www.oyorooms.com/search?location=${dest}&checkin=${dateForUrl}&guests=${partySize ?? 2}` },
     { name: "Hostelworld",   url: `https://www.hostelworld.com/search?search_keywords=${dest}&date_from=${dateForUrl}` },
-    { name: "MakeMyTrip",    url: `https://www.makemytrip.com/hotels/hotel-listing/?checkin=${dateForUrl}&city=${dest}&roomStayQualifier=${partySize ?? 2}e0e` },
+    { name: "Airbnb",        url: `https://www.airbnb.com/s/${dest}/homes?adults=${partySize ?? 2}&checkin=${dateForUrl}` },
+    { name: "Agoda",         url: `https://www.agoda.com/search?city=${dest}&checkIn=${dateForUrl}&rooms=1&adults=${partySize ?? 2}` },
   ] : [
     { name: "Booking.com",   url: `https://www.booking.com/searchresults.html?ss=${dest}&checkin=${dateForUrl}&group_adults=${partySize ?? 2}` },
+    { name: "Airbnb Luxe",   url: `https://www.airbnb.com/luxury/search?location=${dest}&adults=${partySize ?? 2}` },
     { name: "Marriott",      url: `https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=${dest}&fromDate=${dateForUrl}&numberOfAdults=${partySize ?? 2}` },
-    { name: "Taj Hotels",    url: `https://www.tajhotels.com/en-in/search-hotels?location=${dest}` },
-    { name: "Trivago",       url: `https://www.trivago.in/?aDateRange[arr]=${dateForUrl}&iRoomType=7&q=${dest}` },
+    { name: "Trivago",       url: `https://www.trivago.com/?q=${dest}&aDateRange[arr]=${dateForUrl}` },
   ];
 
-  // ---- Cabs / cab-share ----
-  const cabLinks = [
+  const indiaExtraStays = showIndiaOnlySites
+    ? (isSasta
+        ? [{ name: "OYO", url: `https://www.oyorooms.com/search?location=${dest}&checkin=${dateForUrl}&guests=${partySize ?? 2}` },
+           { name: "MakeMyTrip", url: `https://www.makemytrip.com/hotels/hotel-listing/?checkin=${dateForUrl}&city=${dest}&roomStayQualifier=${partySize ?? 2}e0e` }]
+        : [{ name: "Taj Hotels", url: `https://www.tajhotels.com/en-in/search-hotels?location=${dest}` }])
+    : [];
+
+  const stayLinks = [...globalStays, ...indiaExtraStays];
+
+  // ---- Cabs / cab-share (region-aware) ----
+  const cabLinks = showIndiaOnlySites ? [
     { name: "Uber",       url: `https://m.uber.com/looking?drop[0]={"addr":"${enc(destination)}"}` },
     { name: "Ola",        url: `https://book.olacabs.com/` },
     { name: "InDrive",    url: `https://indrive.com/en-in/` },
     { name: "BlaBlaCar",  url: `https://www.blablacar.in/search?fn=${fromCity}&tn=${dest}&db=${dateForUrl}` },
+  ] : [
+    { name: "Uber",       url: `https://m.uber.com/looking?drop[0]={"addr":"${enc(destination)}"}` },
+    { name: "Bolt",       url: `https://bolt.eu/` },
+    { name: "Lyft",       url: `https://www.lyft.com/` },
+    { name: "Local taxis", url: `https://www.google.com/search?q=taxi+in+${dest}` },
   ];
 
   const Group = ({ Icon, title, links }) => (
@@ -1499,7 +1589,7 @@ function BookingLinks({ origin, destination, startDate, partySize, mode }) {
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <Group Icon={Plane} title="Flights" links={flightLinks} />
-        <Group Icon={Train} title="Trains"  links={trainLinks} />
+        {trainLinks && <Group Icon={Train} title="Trains"  links={trainLinks} />}
         <Group Icon={Hotel} title={isSasta ? "Budget stays" : "Premium stays"} links={stayLinks} />
         <Group Icon={Car}   title="Cabs / share rides" links={cabLinks} />
       </div>

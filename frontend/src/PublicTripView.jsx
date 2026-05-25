@@ -86,6 +86,7 @@ function PublicTrip({ trip }) {
   const packing = it.packing ?? [];
   const similar = it.similar_destinations ?? [];
   const photos = it.photos ?? [];
+  const routeStops = Array.isArray(it.route_stops) ? it.route_stops : [];
   const accessNotes = trip.accessibility_notes ?? [];
   const totalEstimate = trip.estimated_cost_inr ?? 0;
   const safeNights = Math.max(1, days.length - 1 || 1);
@@ -140,6 +141,26 @@ function PublicTrip({ trip }) {
               </span>
             )}
           </div>
+
+          {/* Multi-stop route bar */}
+          {routeStops.length >= 2 && (
+            <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
+              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+                <Sparkles size={11} className="accent-text" />
+                Route · {routeStops.length} stops
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {routeStops.map((stop, i) => (
+                  <span key={`${stop}-${i}`} className="flex items-center gap-1.5">
+                    <span className="accent-soft-bg accent-text rounded-full px-2.5 py-1 text-[12px] font-medium">
+                      {stop}
+                    </span>
+                    {i < routeStops.length - 1 && <span className="text-slate-500">→</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Live verified */}
           {it.rag_summary && (

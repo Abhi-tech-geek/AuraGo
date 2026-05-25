@@ -130,6 +130,8 @@ Rules:
     budget_inr:       intent.budget_inr       ?? sessionDefaults.budget_inr,
     party_size:       intent.party_size       ?? sessionDefaults.party_size ?? 2,
     universal_access: intent.universal_access ?? sessionDefaults.universal_access ?? false,
+    country:          sessionDefaults.country ?? "India",
+    has_passport:     sessionDefaults.has_passport ?? false,
     must_haves:       intent.must_haves       ?? [],
     avoid:            intent.avoid            ?? [],
   };
@@ -139,25 +141,59 @@ Rules:
 // =====================================================================
 // 2. Generate a candidate pool
 // =====================================================================
+// Scope rules:
+//  * has_passport = false → ALL 6 destinations must be inside `country`.
+//  * has_passport = true  → mix of 2 domestic + 4 international
+//    (prefer near-region first, then further afield).
+function scopeBrief(country, hasPassport) {
+  if (!hasPassport) {
+    return `Traveller is based in ${country} and has NO passport.
+ALL 6 destinations MUST be inside ${country}. Do not suggest any
+place that requires an international flight.`;
+  }
+  return `Traveller is based in ${country} and HAS a passport.
+Mix the 6 destinations as: 2 inside ${country}, and 4 international.
+Of the international picks, prefer 2 near-region (same continent /
+short-haul) and 2 further afield (long-haul). Match the budget mode.`;
+}
+
 async function generateCandidatePool(intent) {
-  const sys = `You are AuraGo, an Indian travel planner.
+  const country = intent.country || "India";
+  const hasPassport = !!intent.has_passport;
+
+  const sys = `You are AuraGo, a global travel discovery planner.
 Propose 6 distinct destinations that match the constraints.
-For each, pick a single 2-3 word "vibe" (e.g., "Royal Heritage",
-"Mountain Retreat", "Coastal Calm"), an AI value score (1-10), an
-estimated total cost in INR for the whole party, a one-line teaser
-that does NOT mention the destination name, and a single emoji hint.
+
+CRITICAL — HIDDEN GEMS BIAS:
+Bias HEAVILY toward underrated, lesser-known places with strong
+quality. AVOID the top-5 most-touristed clichés for the region
+(e.g., for India avoid Goa / Manali / Jaipur / Shimla / Rishikesh
+unless they uniquely fit; for Europe avoid Paris / Rome / Barcelona;
+for SE Asia avoid Bali / Phuket). Suggest places a well-travelled
+friend would recommend over a guidebook — small towns, off-season
+spots, second cities, untouched coastlines, regional cultural pockets.
+
+${scopeBrief(country, hasPassport)}
+
+For each destination give:
+- a single 2-3 word "vibe" (e.g., "Royal Heritage", "Mountain Retreat",
+  "Coastal Calm", "Desert Quiet")
+- an AI value score (1-10) — score hidden gems higher than overrun spots
+- estimated total cost in INR for the whole party (excluding international flights)
+- a one-line teaser that does NOT mention the destination name
+- a single emoji hint
 
 Return JSON only:
 {
  "candidates": [
-   {"destination":"<name>", "vibe":"<2-3 words>",
+   {"destination":"<name, City/Region, Country>", "vibe":"<2-3 words>",
     "ai_value_score": <number>, "est_cost_inr": <int>,
     "blurb":"<<=120 chars, no destination name>>",
     "hint_emoji":"<one emoji>"}
  ]
 }`;
   const userMsg = `Constraints: ${JSON.stringify(intent)}`;
-  const text = await groqChat(sys, userMsg, { temperature: 0.6 });
+  const text = await groqChat(sys, userMsg, { temperature: 0.75 });
   const parsed = json(text);
   return parsed.candidates ?? [];
 }
@@ -256,7 +292,7 @@ ${liveSnippets.map((s,i)=>`(${i+1}) ${s.title} — ${s.snippet} [${s.url}]`).joi
 // =====================================================================
 export async function chatTurn(req, res) {
   try {
-    const { sessionId, prompt } = req.body;
+    const { sessionId, prompt, intent: bodyIntent } = req.body;
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
 
@@ -264,14 +300,30 @@ export async function chatTurn(req, res) {
       .from("sessions").select("*").eq("id", sessionId).single();
     if (sErr || !session) return res.status(404).json({ error: "session not found" });
 
-    // 1) parse intent
-    const intent = await parseIntent(prompt, session);
+    // 1) parse intent — FAST PATH: if the client already built it from the
+    //    BudgetModal, skip the Groq round-trip and use the structured values.
+    let intent;
+    if (bodyIntent && (bodyIntent.mode || bodyIntent.budget_inr)) {
+      intent = {
+        mode:             bodyIntent.mode             ?? session.mode             ?? "elite",
+        budget_inr:       bodyIntent.budget_inr       ?? session.budget_inr,
+        party_size:       bodyIntent.party_size       ?? session.party_size       ?? 2,
+        universal_access: bodyIntent.universal_access ?? session.universal_access ?? false,
+        country:          bodyIntent.country          ?? session.country          ?? "India",
+        has_passport:     bodyIntent.has_passport     ?? session.has_passport     ?? false,
+        must_haves: [], avoid: [],
+      };
+    } else {
+      intent = await parseIntent(prompt, session);
+    }
 
     await supabase.from("sessions").update({
       mode: intent.mode,
       budget_inr: intent.budget_inr ?? session.budget_inr,
       party_size: intent.party_size,
       universal_access: intent.universal_access,
+      country: intent.country,
+      has_passport: intent.has_passport,
     }).eq("id", sessionId);
 
     // 2) candidate pool
@@ -345,7 +397,25 @@ async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value
     intent
   );
 
+  const routeStops = Array.isArray(intent.route_stops) ? intent.route_stops : [];
+  const isMultiStop = routeStops.length >= 2;
+
+  const multiStopRules = isMultiStop ? `
+MULTI-STOP TRIP — IMPORTANT:
+This is a chained route across ${routeStops.length} cities IN THIS ORDER:
+${routeStops.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
+
+- The "days" array MUST progress through these cities IN ORDER.
+- Each day's "title" MUST prefix the current city, e.g. "Udaipur · Arrive & lake walk".
+- Include INTER-CITY TRAVEL DAYS as their own day entry (e.g. "Day 4 — Udaipur → Jodhpur · scenic drive, arrive evening").
+- Allocate days roughly evenly across stops, but give the first/last city one extra if uneven.
+- "stays" MUST include ONE stay PER stop (so ${routeStops.length} stays total) — name the city in each stay's "blurb".
+- "weather" should describe the overall route (e.g. "Mostly dry 15-28°C across the circuit").
+- "estimated_cost_inr" covers the WHOLE multi-stop trip.
+` : "";
+
   const daySys = `Build a detailed travel itinerary as JSON.
+${multiStopRules}
 Return JSON only:
 {
  "days": [{"day":1,"title":"...","activities":["...","..."]}],
@@ -372,7 +442,7 @@ Return JSON only:
  ],
  "similar_destinations": [
    {
-     "name": "<a real Indian destination similar in vibe to the main one>",
+     "name": "<a real destination similar in vibe to the main one>",
      "emoji": "<one emoji that captures it>",
      "tagline": "<<= 60 chars one-line vibe>"
    }
@@ -380,12 +450,15 @@ Return JSON only:
 }
 
 Rules:
-- "stays" MUST include 4 options at different price points within the user's budget mode.
+- "stays" — for SINGLE-destination trips: 4 options at different price points.
+  For MULTI-STOP trips: exactly one stay per stop (already specified above).
   For sasta mode: lean toward hostels/budget hotels/homestays. For elite: hotels/resorts/villas.
   Tune to the party size — if 1 person traveling, suggest options good for solo travellers.
 - "packing" MUST be 8-12 items, ALWAYS in English. Adapt to the weather and activities.
-- "similar_destinations" MUST include 4 distinct Indian places that match the same vibe.
-  Do NOT repeat the main destination itself.
+- "similar_destinations" MUST include 4 distinct places that match the same vibe.
+  Respect the traveller's passport scope (if no passport, all suggestions must
+  stay inside their home country; if passport, mix domestic + international).
+  Bias toward HIDDEN GEMS over famous tourist hubs. Do NOT repeat the main destination.
 - The "weather" object is REQUIRED. Estimate from typical climate on the given travel date;
   if no date, use current month.`;
 
@@ -393,20 +466,36 @@ Rules:
     ? `Travel date: ${startDate}`
     : `Travel date: not specified — assume the current month.`;
 
+  const country = intent.country || "India";
+  const passportLine = intent.has_passport
+    ? `Traveller HAS a passport (home country: ${country}). "similar_destinations" may mix domestic + international hidden gems.`
+    : `Traveller has NO passport (home country: ${country}). ALL "similar_destinations" MUST be inside ${country}.`;
+
+  const routeLine = isMultiStop
+    ? `Route: ${routeStops.join(" → ")} (chained itinerary across ${routeStops.length} cities).`
+    : "";
+
   const dayUser = `Destination: ${destination} (${vibe})
+${routeLine}
 ${travelDateLine}
 Party size: ${intent.party_size}${intent.party_size === 1 ? " (solo traveller)" : ""}
 Budget (whole party): ₹${intent.budget_inr}
 ${intent.universal_access ? "MUST be wheelchair-friendly. Suggest specific gates, ramps, and lower-crowd entry points." : ""}
+${passportLine}
 Verified context: ${fresh._summary}
 Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
 
   // Run Groq day-plan and Serper image search in parallel — both are bound
   // by external latency so doing them concurrently saves a couple seconds.
+  // For multi-stop trips the joined name confuses Google Images, so search
+  // on the first stop instead — it's a better visual anchor for the gallery.
+  const photoQuery = isMultiStop
+    ? `${routeStops[0]} travel`
+    : `${destination} travel ${vibe ?? ""}`.trim();
   let plan = { days: [], estimated_cost_inr: est_cost_inr, weather: null, stays: [], packing: [], similar_destinations: [] };
   const [planText, photos] = await Promise.allSettled([
     groqChat(daySys, dayUser, { temperature: 0.4 }),
-    serperImages(`${destination} travel ${vibe ?? ""}`.trim(), 6),
+    serperImages(photoQuery, 6),
   ]);
   if (planText.status === "fulfilled") {
     try { plan = json(planText.value); }
@@ -433,6 +522,7 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
     packing: plan.packing ?? [],
     similar_destinations: plan.similar_destinations ?? [],
     photos: photoList,
+    route_stops: isMultiStop ? routeStops : [],
   };
 }
 
@@ -466,6 +556,11 @@ export async function expandCard(req, res) {
       mode: session.mode, budget_inr: session.budget_inr,
       party_size: session.party_size,
       universal_access: session.universal_access,
+      country: session.country ?? "India",
+      has_passport: session.has_passport ?? false,
+      // expand-card on a regular deck is single-destination by definition.
+      // Multi-stop trips skip the deck and go through directTrip instead.
+      route_stops: [],
     };
 
     const payload = await buildItineraryPayload({
@@ -514,11 +609,20 @@ export async function directTrip(req, res) {
 
     // Prefer the intent the client just confirmed (avoids a race with the
     // session-row DB update). Fall back to the persisted session row.
+    const incomingStops = Array.isArray(bodyIntent?.route_stops)
+      ? bodyIntent.route_stops.filter(Boolean)
+      : null;
+    const sessionStops = Array.isArray(session.route_stops) ? session.route_stops : [];
+    const routeStops = incomingStops ?? sessionStops;
+
     const intent = {
       mode:             bodyIntent?.mode             ?? session.mode             ?? "elite",
       budget_inr:       bodyIntent?.budget_inr       ?? session.budget_inr       ?? 50000,
       party_size:       bodyIntent?.party_size       ?? session.party_size       ?? 2,
       universal_access: bodyIntent?.universal_access ?? session.universal_access ?? false,
+      country:          bodyIntent?.country          ?? session.country          ?? "India",
+      has_passport:     bodyIntent?.has_passport     ?? session.has_passport     ?? false,
+      route_stops:      routeStops,
       must_haves: [], avoid: [],
     };
 
@@ -530,6 +634,9 @@ export async function directTrip(req, res) {
         budget_inr: intent.budget_inr,
         party_size: intent.party_size,
         universal_access: intent.universal_access,
+        country: intent.country,
+        has_passport: intent.has_passport,
+        route_stops: intent.route_stops,
       }).eq("id", sessionId);
     }
 
@@ -654,6 +761,7 @@ export async function lockTrip(req, res) {
         travel_date: p.travel_date,
         rag_summary: p.rag_summary,
         hazard: p.hazard,
+        route_stops: p.route_stops ?? [],
       },
       accessibility_notes: p.accessibility_notes,
       rag_citations: p.citations, status: "locked", locked_by: userId,

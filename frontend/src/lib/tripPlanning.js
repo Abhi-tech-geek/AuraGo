@@ -182,6 +182,10 @@ export const fmtINR = (n) =>
 export function promptFromPrefs(p) {
   const accessTxt = p.universal_access ? " with wheelchair access" : "";
   const modeTxt = p.mode === "elite" ? "Elite" : "Sasta";
-  return `Plan a ${modeTxt} trip from ${p.origin} for ${p.party_size} ` +
-         `people, ${p.days} days, budget ₹${p.budget_inr}${accessTxt}.`;
+  const country = p.country || "India";
+  const scope = p.has_passport
+    ? `Surprise me with hidden gems — mix domestic (${country}) and international.`
+    : `Stay within ${country} only — I don't have a passport. Lean toward hidden gems, not the obvious tourist spots.`;
+  return `Plan a ${modeTxt} trip from ${p.origin}, ${country}, for ${p.party_size} ` +
+         `people, ${p.days} days, budget ₹${p.budget_inr}${accessTxt}. ${scope}`;
 }

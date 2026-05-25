@@ -9,12 +9,15 @@ import PublicTripView from "./PublicTripView";
 
 const DEFAULT_PREFS = {
   mode: "elite",
+  country: "India",
+  has_passport: false,
   origin: "Delhi",
   party_size: 4,
   days: 4,
   budget_inr: 150000,
   universal_access: false,
   start_date: "", // ISO yyyy-mm-dd; empty = unspecified
+  route_stops: [], // empty = single-destination trip; 2+ = multi-stop chain
 };
 
 const PREFS_KEY = "aurago.prefs";
@@ -90,7 +93,7 @@ function AuthedApp() {
   const loadSessions = useCallback(async (userId) => {
     const { data, error } = await supabase
       .from("sessions")
-      .select("id, title, mode, budget_inr, party_size, universal_access, updated_at")
+      .select("id, title, mode, budget_inr, party_size, universal_access, country, has_passport, route_stops, updated_at")
       .eq("owner_id", userId)
       .eq("is_archived", false)
       .order("updated_at", { ascending: false })
@@ -135,6 +138,9 @@ function AuthedApp() {
             budget_inr: top.budget_inr ?? p.budget_inr,
             party_size: top.party_size ?? p.party_size,
             universal_access: top.universal_access ?? p.universal_access,
+            country: top.country ?? p.country,
+            has_passport: top.has_passport ?? p.has_passport,
+            route_stops: Array.isArray(top.route_stops) ? top.route_stops : p.route_stops,
           }));
         }
       } catch (e) {
@@ -162,13 +168,18 @@ function AuthedApp() {
         budget_inr: next.budget_inr,
         party_size: next.party_size,
         universal_access: next.universal_access,
+        country: next.country,
+        has_passport: next.has_passport,
+        route_stops: next.route_stops ?? [],
       })
       .eq("id", activeId);
     if (error) console.error("prefs persist failed", error);
     setSessions((list) =>
       list.map((s) => s.id === activeId
         ? { ...s, mode: next.mode, budget_inr: next.budget_inr,
-            party_size: next.party_size, universal_access: next.universal_access }
+            party_size: next.party_size, universal_access: next.universal_access,
+            country: next.country, has_passport: next.has_passport,
+            route_stops: next.route_stops ?? [] }
         : s)
     );
   }, [activeId]);
@@ -186,12 +197,14 @@ function AuthedApp() {
         mode: prefs.mode, budget_inr: prefs.budget_inr,
         party_size: prefs.party_size,
         universal_access: prefs.universal_access,
+        country: prefs.country,
+        has_passport: prefs.has_passport,
       }).select().single();
       if (error) throw error;
       setSessions((list) => [data, ...list]);
       setActiveId(data.id);
-      // Trip-specific prefs (date) shouldn't carry over from a previous trip.
-      setPrefs((p) => ({ ...p, start_date: "" }));
+      // Trip-specific prefs (date, multi-stop) shouldn't carry over to a new trip.
+      setPrefs((p) => ({ ...p, start_date: "", route_stops: [] }));
     } catch (e) {
       console.error("create session failed", e);
       alert(e.message ?? "Could not create trip.");
