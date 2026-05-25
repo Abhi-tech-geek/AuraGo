@@ -38,6 +38,27 @@ function publicTripIdFromUrl() {
   return m ? m[1] : null;
 }
 
+// Detect an /i/<sessionId> invite URL — visitor will be added to the session
+// after auth and then redirected to /. Captured BEFORE auth gate, and
+// mirrored into localStorage so it survives the Supabase email-verify
+// redirect (which lands back on bare origin and would otherwise drop /i/).
+const PENDING_INVITE_KEY = "aurago.pendingInvite";
+function inviteSessionIdFromUrl() {
+  const m = window.location.pathname.match(/^\/i\/([0-9a-f-]{36})\/?$/i);
+  if (m) {
+    try { localStorage.setItem(PENDING_INVITE_KEY, m[1]); } catch {}
+    return m[1];
+  }
+  try {
+    const stored = localStorage.getItem(PENDING_INVITE_KEY);
+    if (stored && /^[0-9a-f-]{36}$/i.test(stored)) return stored;
+  } catch {}
+  return null;
+}
+function clearPendingInvite() {
+  try { localStorage.removeItem(PENDING_INVITE_KEY); } catch {}
+}
+
 // Top-level router — public share URLs short-circuit auth entirely.
 export default function App() {
   const tripId = publicTripIdFromUrl();
@@ -64,6 +85,8 @@ function AuthedApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPinned);
   const [compareOpen, setCompareOpen] = useState(false);
+  // Captured once at mount so Auth flow doesn't lose it on redirects.
+  const [pendingInviteId] = useState(() => inviteSessionIdFromUrl());
 
   // Persist desktop pin state
   useEffect(() => {
@@ -90,11 +113,14 @@ function AuthedApp() {
   }, []);
 
   // ---- load sessions list whenever we have a user -------------------
+  // No explicit owner filter: the RLS policies (sessions_owner_all +
+  // sessions_participant_read) return rows where the user is either the
+  // owner OR a participant via session_participants. This is what lets
+  // collaborators see trips they were invited to.
   const loadSessions = useCallback(async (userId) => {
     const { data, error } = await supabase
       .from("sessions")
-      .select("id, title, mode, budget_inr, party_size, universal_access, country, has_passport, route_stops, updated_at")
-      .eq("owner_id", userId)
+      .select("id, title, mode, budget_inr, party_size, universal_access, country, has_passport, route_stops, owner_id, updated_at")
       .eq("is_archived", false)
       .order("updated_at", { ascending: false })
       .limit(MAX_SESSIONS);
@@ -111,6 +137,27 @@ function AuthedApp() {
     (async () => {
       try {
         const userId = authSession.user.id;
+
+        // If we landed via /i/<sessionId>, accept the invite first so the
+        // joined trip shows up in the list below. We don't block the load
+        // if it fails (e.g., trip deleted) — we just clean the URL.
+        if (pendingInviteId) {
+          try {
+            const { data: authData } = await supabase.auth.getSession();
+            const token = authData?.session?.access_token;
+            await fetch(`/api/sessions/${pendingInviteId}/join`, {
+              method: "POST",
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              credentials: "include",
+            });
+          } catch (e) {
+            console.warn("invite accept failed:", e?.message);
+          }
+          // Clean URL + localStorage so refresh doesn't re-trigger the flow.
+          window.history.replaceState({}, "", "/");
+          clearPendingInvite();
+        }
+
         let list = await loadSessions(userId);
 
         if (list.length === 0) {
@@ -127,7 +174,12 @@ function AuthedApp() {
         }
         if (cancelled) return;
         setSessions(list);
-        setActiveId((prev) => prev && list.some(x => x.id === prev) ? prev : list[0].id);
+        // Prefer the just-joined invite session if it's in the list.
+        const preferred = pendingInviteId && list.some((x) => x.id === pendingInviteId)
+          ? pendingInviteId
+          : null;
+        setActiveId((prev) => preferred
+          ?? (prev && list.some((x) => x.id === prev) ? prev : list[0].id));
 
         // Hydrate prefs from active session's columns (mode/budget/party/access)
         const top = list[0];

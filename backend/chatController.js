@@ -871,7 +871,100 @@ User question: ${question}`;
 
 
 // =====================================================================
-// 8. GET /api/public/trip/:id — read-only public view, NO auth required
+// 8a. POST /api/sessions/:id/join — accept an invite to a shared trip
+// =====================================================================
+// Idempotent: if the user is already a participant, returns ok=true.
+// Service-role bypasses RLS so any signed-in user with the link can join.
+export async function joinSession(req, res) {
+  try {
+    const sessionId = req.params.id;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    if (!sessionId) return res.status(400).json({ error: "missing session id" });
+
+    // Confirm the session exists (catches typos / stale links cleanly).
+    const { data: session, error: sErr } = await supabase
+      .from("sessions").select("id, owner_id, title").eq("id", sessionId).single();
+    if (sErr || !session) return res.status(404).json({ error: "trip not found" });
+
+    // Owner doesn't need a participant row — RLS already lets them in.
+    if (session.owner_id === userId) {
+      return res.json({ ok: true, role: "owner", sessionId });
+    }
+
+    // Make sure a profile row exists for this user (RLS-friendly upsert).
+    await supabase.from("profiles").upsert({ id: userId }, { onConflict: "id" });
+
+    // Insert (or no-op if already a member). PK is (session_id, user_id).
+    const { error: pErr } = await supabase.from("session_participants").upsert({
+      session_id: sessionId,
+      user_id: userId,
+      role: "member",
+    }, { onConflict: "session_id,user_id" });
+    if (pErr) throw pErr;
+
+    return res.json({ ok: true, role: "member", sessionId, title: session.title });
+  } catch (e) {
+    console.error("joinSession error", e);
+    return res.status(500).json({ error: "join failed", detail: e.message });
+  }
+}
+
+
+// =====================================================================
+// 8b. GET /api/sessions/:id/participants — list members for the header pill
+// =====================================================================
+export async function listParticipants(req, res) {
+  try {
+    const sessionId = req.params.id;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    // Anyone who can see the session can list its members. We do a soft check:
+    // is the requester the owner or a participant?
+    const { data: session } = await supabase
+      .from("sessions").select("owner_id").eq("id", sessionId).single();
+    if (!session) return res.status(404).json({ error: "trip not found" });
+
+    let isMember = session.owner_id === userId;
+    if (!isMember) {
+      const { data: p } = await supabase.from("session_participants")
+        .select("user_id").eq("session_id", sessionId).eq("user_id", userId).maybeSingle();
+      isMember = !!p;
+    }
+    if (!isMember) return res.status(403).json({ error: "not a member" });
+
+    // Pull owner profile + participant profiles.
+    const { data: ownerProf } = await supabase.from("profiles")
+      .select("id, display_name, avatar_url").eq("id", session.owner_id).single();
+
+    const { data: parts } = await supabase.from("session_participants")
+      .select("user_id, role, profiles(id, display_name, avatar_url)")
+      .eq("session_id", sessionId);
+
+    const members = [
+      { id: ownerProf?.id, name: ownerProf?.display_name ?? "owner",
+        avatar: ownerProf?.avatar_url, role: "owner" },
+      ...(parts ?? [])
+        .filter((p) => p.user_id !== session.owner_id)
+        .map((p) => ({
+          id: p.profiles?.id ?? p.user_id,
+          name: p.profiles?.display_name ?? "friend",
+          avatar: p.profiles?.avatar_url,
+          role: p.role,
+        })),
+    ];
+
+    return res.json({ ok: true, members, count: members.length });
+  } catch (e) {
+    console.error("listParticipants error", e);
+    return res.status(500).json({ error: "members lookup failed" });
+  }
+}
+
+
+// =====================================================================
+// 9. GET /api/public/trip/:id — read-only public view, NO auth required
 // =====================================================================
 // Returns just the public-safe fields of a locked trip so anyone with the
 // link can see the itinerary. We use the service-role client so RLS is

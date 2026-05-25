@@ -14,6 +14,7 @@ import {
   Hotel, Star, Plane, Train, Building2, MessageCircle, X, CheckSquare,
   Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight, ImageIcon,
   Mountain, Waves, TreePine, Droplets, Castle, Church, PawPrint, Compass,
+  UserPlus, Users, ExternalLink, Map as MapIcon,
 } from "lucide-react";
 
 // Map of card "hint_category" → lucide icon. Used by MysteryCard so the deck
@@ -949,6 +950,8 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
   const [locked, setLocked]   = useState(p.locked ?? false);
   const [tripId, setTripId]   = useState(null);
   const [shareCopied, setShareCopied] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const [memberCount, setMemberCount] = useState(0);
 
   const card = useMemo(
     () => (deck?.payload?.cards ?? []).find((c) => c.id === p.card_id),
@@ -1033,6 +1036,48 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
     } finally { setLocking(false); }
   };
 
+  // Fetch member count for the "N joined" pill. Re-runs when sessionId changes.
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: authData } = await supabase.auth.getSession();
+        const token = authData?.session?.access_token;
+        const r = await fetch(`/api/sessions/${sessionId}/participants`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!cancelled) setMemberCount(data?.count ?? 0);
+      } catch { /* silent — UX nicety only */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const handleInvite = async () => {
+    const url = `${window.location.origin}/i/${sessionId}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Plan ${p.destination ?? "this trip"} with me on AuraGo`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setInviteCopied(true);
+        window.setTimeout(() => setInviteCopied(false), 2000);
+      }
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = url; document.body.appendChild(ta);
+        ta.select(); document.execCommand("copy");
+        document.body.removeChild(ta);
+        setInviteCopied(true);
+        window.setTimeout(() => setInviteCopied(false), 2000);
+      } catch {}
+    }
+  };
+
   const handleShare = async () => {
     if (!tripId) return;
     const url = `${window.location.origin}/trip/${tripId}`;
@@ -1082,6 +1127,25 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {memberCount > 1 && (
+            <span
+              className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-300"
+              title={`${memberCount} people on this trip`}
+            >
+              <Users size={11} className="accent-text" />
+              {memberCount}
+            </span>
+          )}
+          <motion.button
+            onClick={handleInvite}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
+            title="Invite friends to plan together (live sync)"
+          >
+            {inviteCopied ? <Check size={12} className="accent-text" /> : <UserPlus size={12} />}
+            {inviteCopied ? "Invite copied" : "Invite friends"}
+          </motion.button>
           {locked && tripId && (
             <button
               onClick={handleShare}
@@ -1251,11 +1315,41 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
           {(p.days ?? []).length}-day plan
         </div>
         <div className="grid gap-2">
-          {(p.days ?? []).map((d) => (
+          {(p.days ?? []).map((d) => {
+            // Build a Google Maps Directions deep-link with this day's
+            // activities as waypoints. No API key needed — Google geocodes
+            // the text. The destination acts as the origin anchor.
+            const acts = (d.activities ?? d.acts ?? []).filter(Boolean);
+            const dayRouteUrl = (() => {
+              if (!p.destination || acts.length === 0) return null;
+              const origin = encodeURIComponent(p.destination);
+              if (acts.length === 1) {
+                const dest = encodeURIComponent(`${acts[0]}, ${p.destination}`);
+                return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
+              }
+              const dest = encodeURIComponent(`${acts[acts.length - 1]}, ${p.destination}`);
+              const waypoints = acts.slice(0, -1)
+                .map((a) => `${a}, ${p.destination}`)
+                .join("|");
+              return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&waypoints=${encodeURIComponent(waypoints)}`;
+            })();
+            return (
             <div key={d.day} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="mb-1 flex items-center gap-2 text-[12px]">
-                <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] font-semibold">Day {d.day}</span>
-                <span className="text-slate-300">{d.title}</span>
+              <div className="mb-1 flex items-center justify-between gap-2 text-[12px]">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] font-semibold">Day {d.day}</span>
+                  <span className="truncate text-slate-300">{d.title}</span>
+                </div>
+                {dayRouteUrl && (
+                  <a
+                    href={dayRouteUrl} target="_blank" rel="noreferrer"
+                    className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08]"
+                    title="Open this day's stops as a Google Maps route"
+                  >
+                    <MapIcon size={10} className="accent-text" />
+                    Day route
+                  </a>
+                )}
               </div>
               <ul className="space-y-0.5 text-[13px] text-slate-300">
                 {(d.activities ?? d.acts ?? []).map((a, i) => {
@@ -1276,7 +1370,8 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
                 })}
               </ul>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1316,6 +1411,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         mode={prefs.mode}
         homeCountry={prefs.country}
       />
+
+      {/* LOCAL GUIDES — deep links to real marketplaces, no fake verification */}
+      <LocalGuides destination={p.destination} />
 
       {/* SIMILAR DESTINATIONS */}
       {p.similar_destinations?.length > 0 && (
@@ -1419,6 +1517,66 @@ function StaysSection({ stays, nights, destination, startDate, partySize }) {
     </div>
   );
 }
+
+// =====================================================================
+// LocalGuides — deep links to legit guide marketplaces for the destination.
+// =====================================================================
+// We don't run our own guide platform yet, so AuraGo doesn't claim to
+// "verify" anyone. Instead this surfaces external marketplaces where
+// users can find rated guides (each platform has its own review system).
+function LocalGuides({ destination }) {
+  if (!destination) return null;
+  const q = encodeURIComponent(destination);
+  const links = [
+    { name: "GetYourGuide", tag: "Top tours + activities",
+      url: `https://www.getyourguide.com/s/?q=${q}` },
+    { name: "Viator",        tag: "Day trips + experiences",
+      url: `https://www.viator.com/search/${q}` },
+    { name: "Airbnb Experiences", tag: "Hosted by locals",
+      url: `https://www.airbnb.com/s/${q}/experiences` },
+    { name: "Withlocals",    tag: "Small-group local guides",
+      url: `https://www.withlocals.com/search/?query=${q}` },
+    { name: "TripAdvisor",   tag: "Reviews + tours",
+      url: `https://www.tripadvisor.com/Search?q=${q}+tour+guide` },
+  ];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.2 }}
+      transition={{ duration: 0.3 }}
+      className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4"
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <Users size={11} className="accent-text" />
+          Local guides
+        </div>
+        <span className="text-[10px] text-slate-500">External marketplaces · check reviews</span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {links.map((l) => (
+          <motion.a
+            key={l.name}
+            href={l.url}
+            target="_blank"
+            rel="noreferrer"
+            whileHover={{ y: -2 }}
+            transition={{ type: "spring", stiffness: 320, damping: 20 }}
+            className="group flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 transition hover:border-white/20 hover:bg-white/[0.05]"
+          >
+            <div className="min-w-0">
+              <div className="text-[13px] font-medium text-slate-100">{l.name}</div>
+              <div className="truncate text-[11px] text-slate-400">{l.tag}</div>
+            </div>
+            <ExternalLink size={13} className="accent-text shrink-0 transition group-hover:translate-x-0.5" />
+          </motion.a>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 
 // =====================================================================
 // SimilarDestinations — chip strip of alternative places to switch to
