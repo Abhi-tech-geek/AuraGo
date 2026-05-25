@@ -142,27 +142,55 @@ Rules:
 // 2. Generate a candidate pool
 // =====================================================================
 // Scope rules:
-//  * has_passport = false → ALL 6 destinations must be inside `country`.
-//  * has_passport = true  → mix of 2 domestic + 4 international
-//    (prefer near-region first, then further afield).
-function scopeBrief(country, hasPassport) {
-  if (!hasPassport) {
-    return `Traveller is based in ${country} and has NO passport.
-ALL 6 destinations MUST be inside ${country}. Do not suggest any
-place that requires an international flight.`;
-  }
-  return `Traveller is based in ${country} and HAS a passport.
-Mix the 6 destinations as: 2 inside ${country}, and 4 international.
-Of the international picks, prefer 2 near-region (same continent /
-short-haul) and 2 further afield (long-haul). Match the budget mode.`;
+//  * has_passport = false → ALL 8 destinations inside `country`.
+//  * has_passport = true + budget feasible → 5 domestic + 3 international.
+//  * has_passport = true but budget too tight → force domestic-only.
+//
+// Budget feasibility for international suggestions:
+//   per_person_per_day ≥ ₹3000  AND  total_per_person ≥ ₹30000
+// Below either threshold we override passport=true and stay domestic to
+// avoid suggesting plans the user can't actually afford.
+function isIntlFeasible(intent) {
+  const total  = Number(intent.budget_inr ?? 0);
+  const party  = Math.max(1, Number(intent.party_size ?? 1));
+  const days   = Math.max(1, Number(intent.days ?? 4));
+  const perPP  = total / party;
+  const perPPD = perPP / days;
+  return perPPD >= 3000 && perPP >= 30000;
 }
 
+function scopeBrief(country, hasPassport, intlFeasible) {
+  if (!hasPassport) {
+    return `Traveller is based in ${country} and has NO passport.
+ALL 8 destinations MUST be inside ${country}. No international picks.`;
+  }
+  if (!intlFeasible) {
+    return `Traveller is based in ${country} and HAS a passport, BUT the
+budget is too tight for international travel right now. Stay 100%
+domestic — all 8 destinations inside ${country}. Do not mention this
+override; just deliver a strong domestic deck.`;
+  }
+  return `Traveller is based in ${country} and HAS a passport.
+Return exactly 8 destinations split as:
+  5 inside ${country} (hidden gems)
+  3 international (2 near-region short-haul + 1 further afield)
+Match the budget mode and stay within the per-person budget.`;
+}
+
+// Curated category list — the frontend maps these to lucide icons. The LLM
+// MUST choose ONE from this set so the card art stays consistent.
+const HINT_CATEGORIES = [
+  "mountain", "beach", "desert", "forest", "lake",
+  "heritage", "city", "pilgrim", "wildlife", "adventure",
+];
+
 async function generateCandidatePool(intent) {
-  const country = intent.country || "India";
+  const country     = intent.country || "India";
   const hasPassport = !!intent.has_passport;
+  const intlOK      = isIntlFeasible(intent);
 
   const sys = `You are AuraGo, a global travel discovery planner.
-Propose 6 distinct destinations that match the constraints.
+Propose exactly 8 distinct destinations that match the constraints.
 
 CRITICAL — HIDDEN GEMS BIAS:
 Bias HEAVILY toward underrated, lesser-known places with strong
@@ -173,7 +201,14 @@ for SE Asia avoid Bali / Phuket). Suggest places a well-travelled
 friend would recommend over a guidebook — small towns, off-season
 spots, second cities, untouched coastlines, regional cultural pockets.
 
-${scopeBrief(country, hasPassport)}
+BUDGET REALISM:
+Total budget is ₹${intent.budget_inr} for ${intent.party_size} ${intent.party_size === 1 ? "person" : "people"} over ${intent.days ?? 4} days.
+Every destination's est_cost_inr MUST be achievable inside this budget
+(stay + food + local transport for the whole party, excluding flights).
+Never suggest a place that obviously requires more money — the user feels
+let down.
+
+${scopeBrief(country, hasPassport, intlOK)}
 
 For each destination give:
 - a single 2-3 word "vibe" (e.g., "Royal Heritage", "Mountain Retreat",
@@ -181,7 +216,8 @@ For each destination give:
 - an AI value score (1-10) — score hidden gems higher than overrun spots
 - estimated total cost in INR for the whole party (excluding international flights)
 - a one-line teaser that does NOT mention the destination name
-- a single emoji hint
+- a "hint_category" — pick ONE from: ${HINT_CATEGORIES.join(", ")}
+  (pick the single best fit for the place's primary character)
 
 Return JSON only:
 {
@@ -189,13 +225,19 @@ Return JSON only:
    {"destination":"<name, City/Region, Country>", "vibe":"<2-3 words>",
     "ai_value_score": <number>, "est_cost_inr": <int>,
     "blurb":"<<=120 chars, no destination name>>",
-    "hint_emoji":"<one emoji>"}
+    "hint_category":"<one of the categories>"}
  ]
 }`;
   const userMsg = `Constraints: ${JSON.stringify(intent)}`;
   const text = await groqChat(sys, userMsg, { temperature: 0.75 });
   const parsed = json(text);
-  return parsed.candidates ?? [];
+  const candidates = parsed.candidates ?? [];
+  // Coerce any unknown / missing category to a safe default so the frontend
+  // icon map never has to guess.
+  return candidates.map((c) => ({
+    ...c,
+    hint_category: HINT_CATEGORIES.includes(c.hint_category) ? c.hint_category : "city",
+  }));
 }
 
 
@@ -343,10 +385,10 @@ export async function chatTurn(req, res) {
       _citations: [],
     }));
 
-    // 4) Top 5 by AI value score
+    // 4) Top 8 by AI value score
     const safe = [...verified]
       .sort((a, b) => (b.ai_value_score ?? 0) - (a.ai_value_score ?? 0))
-      .slice(0, 5);
+      .slice(0, 8);
 
     console.log(`chatTurn: pool ${pool.length}, kept ${safe.length} for "${prompt.slice(0, 80)}"`);
 
@@ -357,7 +399,8 @@ export async function chatTurn(req, res) {
       ai_value_score: c.ai_value_score,
       est_cost_inr: c.est_cost_inr,
       blurb: c.blurb,
-      hint_emoji: c.hint_emoji,
+      hint_category: c.hint_category ?? "city",
+      hint_emoji: c.hint_emoji, // back-compat for older clients
       accessibility_ok: c.accessibility_ok,
       _destination: c.destination,
       _summary:     c._summary,
@@ -367,8 +410,8 @@ export async function chatTurn(req, res) {
     }));
 
     const intro = intent.universal_access
-      ? `I verified accessibility, prices, and recent reviews. Here are 5 ${intent.mode} picks for ${intent.party_size} — tap any card to dive in.`
-      : `Here are 5 ${intent.mode} picks I cross-checked with live data. Tap a card to dive in.`;
+      ? `I verified accessibility, prices, and recent reviews. Here are ${cards.length} ${intent.mode} picks for ${intent.party_size} — tap any card to dive in.`
+      : `Here are ${cards.length} ${intent.mode} picks I cross-checked with live data. Tap a card to dive in.`;
 
     const { data: deckMsg, error: deckErr } = await supabase.from("messages").insert({
       session_id: sessionId, role: "assistant", kind: "mystery_deck",
@@ -647,7 +690,7 @@ export async function directTrip(req, res) {
       ai_value_score: 8.5,
       est_cost_inr: Math.round(intent.budget_inr * 0.7),
       blurb: `Planned for your trip to ${destination.trim()}.`,
-      hint_emoji: "📍",
+      hint_category: "city",
     };
     try {
       const sys = `Return JSON only describing this destination as a card:
@@ -656,7 +699,7 @@ export async function directTrip(req, res) {
  "ai_value_score": <number 1-10>,
  "est_cost_inr": <int — total spend for the whole party, excluding travel>,
  "blurb": "<<= 100 chars one-line vibe; do NOT include the destination name>",
- "hint_emoji": "<one emoji>"
+ "hint_category": "<one of: ${HINT_CATEGORIES.join(", ")}>"
 }`;
       const text = await groqChat(sys, `Destination: ${destination}\nMode: ${intent.mode}\nBudget: ₹${intent.budget_inr}\nParty size: ${intent.party_size}`, { temperature: 0.4 });
       const meta = json(text);
@@ -672,7 +715,8 @@ export async function directTrip(req, res) {
       ai_value_score: card.ai_value_score,
       est_cost_inr: card.est_cost_inr,
       blurb: card.blurb,
-      hint_emoji: card.hint_emoji,
+      hint_category: HINT_CATEGORIES.includes(card.hint_category) ? card.hint_category : "city",
+      hint_emoji: card.hint_emoji, // back-compat
       accessibility_ok: true,
       _destination: card.destination,
       _summary: `${card.destination} matches your ${intent.mode} brief.`,

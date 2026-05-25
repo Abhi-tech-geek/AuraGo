@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Accessibility, CalendarDays, Globe, Route as RouteIcon } from "lucide-react";
 import { budgetHintLabel, fmtINR } from "./lib/tripPlanning";
+import { citiesFor } from "./lib/cities";
 
 // Convert textarea / array → cleaned ordered list of stop strings.
 function normalizeStops(input) {
@@ -164,8 +165,16 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
               value={origin}
               onChange={(e) => setOrigin(e.target.value)}
               placeholder="e.g. Delhi"
+              list="aura-cities"
+              autoComplete="off"
               className="accent-ring w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm focus:outline-none"
             />
+            {/* datalist gives a native, fast, dark-mode-respecting typeahead */}
+            <datalist id="aura-cities">
+              {citiesFor(country).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </div>
         </div>
 

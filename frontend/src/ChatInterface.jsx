@@ -13,7 +13,24 @@ import {
   Sliders, Menu, CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
   Hotel, Star, Plane, Train, Building2, MessageCircle, X, CheckSquare,
   Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight, ImageIcon,
+  Mountain, Waves, TreePine, Droplets, Castle, Church, PawPrint, Compass,
 } from "lucide-react";
+
+// Map of card "hint_category" → lucide icon. Used by MysteryCard so the deck
+// gets clean iconography instead of a raw emoji. Add new categories here
+// in sync with HINT_CATEGORIES in backend/chatController.js.
+const CATEGORY_ICON = {
+  mountain: Mountain,
+  beach: Waves,
+  desert: Sun,
+  forest: TreePine,
+  lake: Droplets,
+  heritage: Castle,
+  city: Building2,
+  pilgrim: Church,
+  wildlife: PawPrint,
+  adventure: Compass,
+};
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";
@@ -858,15 +875,23 @@ function MysteryCard({ card, index, onOpen, disabled }) {
         {card.accessibility_ok && <Accessibility size={14} className="accent-text" />}
       </div>
 
-      {/* Mystery illustration — emoji on a layered "puzzle" background */}
+      {/* Mystery illustration — lucide icon on the puzzle backdrop. Cleaner
+          than emoji and matches the rest of the app's iconography. */}
       <div className="relative flex h-28 items-center justify-center">
         <PuzzleArt index={index} />
         <motion.div
-          className="relative z-10 text-5xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)]"
+          className="accent-text relative z-10 grid h-14 w-14 place-items-center rounded-full border border-white/[0.08]"
+          style={{
+            background: "radial-gradient(circle at 30% 30%, var(--accent-soft), rgba(255,255,255,0.02))",
+            boxShadow: "0 6px 22px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
+          }}
           animate={{ y: [0, -3, 0] }}
           transition={{ duration: 3 + index * 0.3, repeat: Infinity, ease: "easeInOut" }}
         >
-          {card.hint_emoji ?? "✦"}
+          {(() => {
+            const Icon = CATEGORY_ICON[card.hint_category] ?? Sparkles;
+            return <Icon size={26} strokeWidth={1.6} />;
+          })()}
         </motion.div>
       </div>
 
