@@ -24,6 +24,24 @@ body.sasta {
 
 html { background: var(--bg-2); }
 
+/* Native <select> dropdowns: force dark options on all browsers — without
+   this they render as white-on-white on Chrome/Edge on Windows. */
+select { color: #f1f5f9; }
+select option,
+select optgroup {
+  background-color: #0F172A;
+  color: #f1f5f9;
+}
+select option:checked,
+select option:hover {
+  background-color: rgba(212, 175, 55, 0.18); /* accent-soft */
+  color: #fff;
+}
+body.sasta select option:checked,
+body.sasta select option:hover {
+  background-color: rgba(57, 255, 20, 0.14);
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;
