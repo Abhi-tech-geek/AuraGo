@@ -55,6 +55,7 @@ function labelForHint(category) {
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";
+import { citiesFor } from "./lib/cities";
 import {
   computeRoutes, computeBudgetBreakdown, fmtINR, promptFromPrefs,
   KNOWN_DESTINATIONS,
@@ -421,12 +422,6 @@ export default function ChatInterface({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <button
-            onClick={() => setModalOpen(true)}
-            className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08] sm:flex"
-          >
-            <Plus size={12} /> Trip preferences
-          </button>
           <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5 text-[11px] sm:text-xs">
             <ModeBtn active={prefs.mode === "sasta"} onClick={() => handleModeToggle("sasta")}>Sasta</ModeBtn>
             <ModeBtn active={prefs.mode === "elite"} onClick={() => handleModeToggle("elite")}>Elite</ModeBtn>
@@ -445,7 +440,16 @@ export default function ChatInterface({
         <LayoutGroup>
           <div className="flex flex-col gap-5">
             {messages.length === 0 && !sending && (
-              <Welcome loadError={loadError} onOpenModal={() => setModalOpen(true)} />
+              <Welcome
+                loadError={loadError}
+                prefs={prefs}
+                onOpenModal={() => setModalOpen(true)}
+                onPickDestination={(name) => { setPendingDestination(name); setModalOpen(true); }}
+                onStarter={(overrides) => {
+                  onPrefsChange?.({ ...prefs, ...overrides });
+                  setModalOpen(true);
+                }}
+              />
             )}
             <AnimatePresence initial={false}>
               {messages.map((m) => {
@@ -530,20 +534,37 @@ export default function ChatInterface({
           >
             <Sliders size={16} />
           </button>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault(); handleSendInput();
-              }
-            }}
-            placeholder={composerMode === "direct"
-              ? "Type a destination, e.g. Goa or Manali"
-              : "Describe your dream trip… (or pick 'I know where' above)"}
-            rows={1}
-            className="accent-ring max-h-40 flex-1 resize-none rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
-          />
+          {composerMode === "direct" ? (
+            <>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSendInput(); } }}
+                placeholder="Type a destination, e.g. Goa or Manali"
+                list="aura-cities-composer"
+                autoComplete="off"
+                className="accent-ring flex-1 rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
+              />
+              <datalist id="aura-cities-composer">
+                {citiesFor(prefs.country).map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </>
+          ) : (
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault(); handleSendInput();
+                }
+              }}
+              placeholder="Describe your dream trip… (or pick 'I know where' above)"
+              rows={1}
+              className="accent-ring max-h-40 flex-1 resize-none rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
+            />
+          )}
           <motion.button
             onClick={handleSendInput}
             disabled={sending}
@@ -690,49 +711,136 @@ function ComposerModeBtn({ active, onClick, icon, label }) {
   );
 }
 
-function Welcome({ loadError, onOpenModal }) {
+function Welcome({ loadError, prefs, onOpenModal, onPickDestination, onStarter }) {
+  // Quick-pick destinations swap based on whether the user has a passport.
+  // We bias toward hidden-gem-ish names rather than the obvious touristy
+  // ones — matches what the candidate-pool prompt already does.
+  const country = prefs?.country ?? "India";
+  const hasPassport = !!prefs?.has_passport;
+  const POOLS = {
+    India: ["Spiti Valley", "Hampi", "Ziro", "Chettinad", "Tawang", "Gokarna", "Khajuraho", "Munsiyari"],
+    "United States": ["Asheville", "Sedona", "Marfa", "Bar Harbor", "Taos", "Savannah", "Olympic NP", "Joshua Tree"],
+    "United Kingdom": ["Isle of Skye", "Cotswolds", "Bath", "Snowdonia", "St Ives", "Durham", "Yorkshire Dales", "Pembrokeshire"],
+    Australia: ["Margaret River", "Kangaroo Island", "Byron Bay", "Tasmania", "Coral Bay", "Lord Howe", "Daintree", "Esperance"],
+    UAE: ["Hatta", "Liwa Desert", "Khor Fakkan", "Al Ain", "Ras Al Khaimah", "Dibba", "Sir Bani Yas", "Fujairah"],
+    Singapore: ["Sentosa", "Pulau Ubin", "Kampong Glam", "Tiong Bahru", "Southern Ridges", "Coney Island", "Lazarus Island", "St John's Island"],
+    Canada: ["Tofino", "Banff", "Gros Morne", "Haida Gwaii", "Saguenay", "Cape Breton", "Yukon", "Drumheller"],
+    Germany: ["Saxon Switzerland", "Rügen", "Bamberg", "Quedlinburg", "Sylt", "Görlitz", "Spreewald", "Tübingen"],
+    Japan: ["Naoshima", "Tohoku", "Yakushima", "Iya Valley", "Onomichi", "Tsumago", "Shimokita", "Ishigaki"],
+    Thailand: ["Pai", "Chiang Rai", "Sukhothai", "Koh Kood", "Trang", "Mae Hong Son", "Nan", "Loei"],
+    Indonesia: ["Flores", "Tana Toraja", "Belitung", "Sumba", "Banyuwangi", "Raja Ampat", "Derawan", "Kalimantan"],
+  };
+  const intlPool = ["Georgia", "Sri Lanka", "Vietnam", "Portugal", "Slovenia", "Jordan"];
+  const local = POOLS[country] ?? POOLS.India;
+  const picks = hasPassport ? [...local.slice(0, 5), ...intlPool.slice(0, 3)] : local.slice(0, 8);
+
+  // Theme starters — one-tap presets that pre-fill the modal.
+  const starters = [
+    { label: "Weekend escape", emoji: "🏖️", desc: "≈ ₹15k · 3 days", overrides: { mode: "sasta", budget_inr: 15000, days: 3, party_size: 2 } },
+    { label: "Honeymoon vibes",  emoji: "💞", desc: "≈ ₹2L · 6 days",  overrides: { mode: "elite", budget_inr: 200000, days: 6, party_size: 2 } },
+    { label: "Solo backpacker",  emoji: "🎒", desc: "≈ ₹10k · 5 days", overrides: { mode: "sasta", budget_inr: 10000, days: 5, party_size: 1 } },
+  ];
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+      initial={{ opacity: 0, y: 16, scale: 0.985 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="glass relative mt-[10vh] overflow-hidden rounded-2xl p-5"
+      className="glass relative mt-4 overflow-hidden rounded-2xl p-5 sm:mt-8 sm:p-7"
     >
-      {/* slow drifting accent blob behind the copy */}
+      {/* drifting accent blobs */}
       <motion.div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-12 -top-16 h-48 w-48 rounded-full blur-3xl"
+        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full blur-3xl"
         style={{ background: "var(--accent-soft)" }}
-        animate={{ x: [0, 20, 0], y: [0, 10, 0] }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ x: [0, 30, 0], y: [0, 14, 0], opacity: [0.55, 0.85, 0.55] }}
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
       />
+      <motion.div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full blur-3xl"
+        style={{ background: "rgba(99,102,241,0.18)" }}
+        animate={{ x: [0, -20, 0], y: [0, -10, 0], opacity: [0.4, 0.65, 0.4] }}
+        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
+      />
+
       <div className="relative">
-        <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
           <Sparkles size={10} className="accent-text" />
           AuraGo
         </div>
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05, duration: 0.5 }}
+          className="serif mb-2 text-3xl leading-tight sm:text-4xl"
+        >
+          Where to next?
+        </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.45 }}
-          className="serif mb-2 text-2xl leading-tight"
+          transition={{ delay: 0.12, duration: 0.45 }}
+          className="text-[14.5px] leading-relaxed text-slate-300"
         >
-          Hi, I'm AuraGo.
+          Pick a hidden gem below, choose a theme starter, or describe your
+          dream trip in the box at the bottom. I'll come back with 8 verified
+          options.
         </motion.p>
-        <motion.p
-          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.18, duration: 0.45 }}
-          className="text-[15px] leading-relaxed text-slate-200"
-        >
-          I'll plan your trip in 30 seconds. Click <strong>"New trip"</strong>, type a destination, or describe your dream trip below.
-        </motion.p>
-        <p className="mt-3 text-xs text-slate-400">
-          Try: <em>"Plan an elite trip for 4 from Mumbai with wheelchair access"</em> or just <em>"Goa"</em>.
-        </p>
-        {loadError && <p className="mt-3 text-[12.5px] text-amber-200">{loadError}</p>}
+
+        {/* Quick-pick destination chips */}
+        <div className="mt-5">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+            <MapPin size={10} className="accent-text" /> Hidden gems · {country}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {picks.map((name, i) => (
+              <motion.button
+                key={name}
+                onClick={() => onPickDestination?.(name)}
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18 + i * 0.04, duration: 0.35 }}
+                whileHover={{ y: -2, scale: 1.04 }}
+                whileTap={{ scale: 0.95 }}
+                className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12.5px] text-slate-200 hover:border-white/20 hover:bg-white/[0.06]"
+              >
+                {name}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
+        {/* Theme starter cards */}
+        <div className="mt-5">
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+            <Sparkles size={10} className="accent-text" /> Quick starters
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {starters.map((s, i) => (
+              <motion.button
+                key={s.label}
+                onClick={() => onStarter?.(s.overrides)}
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.35 + i * 0.06 }}
+                whileHover={{ y: -3 }}
+                className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-3 text-left transition hover:border-white/20 hover:bg-white/[0.05]"
+              >
+                <div className="mb-1 text-2xl">{s.emoji}</div>
+                <div className="text-[13.5px] font-medium text-slate-100">{s.label}</div>
+                <div className="text-[11.5px] text-slate-400">{s.desc}</div>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
+        {loadError && (
+          <p className="mt-4 text-[12.5px] text-amber-200">{loadError}</p>
+        )}
+
+        {/* primary CTA — still a single canonical button so first-timers know
+            where to start, but it's no longer the only entry point. */}
         <motion.button
           onClick={onOpenModal}
           whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-          className="accent-bg accent-glow mt-4 rounded-xl px-4 py-2 text-sm font-semibold text-slate-900"
+          className="accent-bg accent-glow mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900"
         >
           Start a trip →
         </motion.button>
@@ -1458,16 +1566,41 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
                   <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] font-semibold">Day {d.day}</span>
                   <span className="truncate text-slate-300">{d.title}</span>
                 </div>
-                {dayRouteUrl && (
-                  <a
-                    href={dayRouteUrl} target="_blank" rel="noreferrer"
-                    className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08]"
-                    title="Open this day's stops as a Google Maps route"
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={async () => {
+                      if (refining || locked) return;
+                      setRefining(true);
+                      try {
+                        await authedFetch("/api/chat/refine", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            sessionId,
+                            itineraryMessageId: itinerary.id,
+                            instruction: `Regenerate Day ${d.day} activities only. Keep the same destination, same vibe, same number of days, same stays. Give fresh, different activity ideas for Day ${d.day} that fit the trip mode.`,
+                          }),
+                        });
+                      } catch (e) { console.warn("shuffle failed", e); }
+                      finally { setRefining(false); }
+                    }}
+                    disabled={refining || locked}
+                    className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08] disabled:opacity-50"
+                    title={locked ? "Locked — unlock to change" : "Generate different activities for this day"}
                   >
-                    <MapIcon size={10} className="accent-text" />
-                    Day route
-                  </a>
-                )}
+                    <RefreshCw size={10} className={`accent-text ${refining ? "animate-spin" : ""}`} />
+                    Shuffle
+                  </button>
+                  {dayRouteUrl && (
+                    <a
+                      href={dayRouteUrl} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08]"
+                      title="Open this day's stops as a Google Maps route"
+                    >
+                      <MapIcon size={10} className="accent-text" />
+                      Map
+                    </a>
+                  )}
+                </div>
               </div>
               <ul className="space-y-0.5 text-[13px] text-slate-300">
                 {(d.activities ?? d.acts ?? []).map((a, i) => {
