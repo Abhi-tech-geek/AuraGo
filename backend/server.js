@@ -5,7 +5,12 @@ import cookieParser from 'cookie-parser'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { createClient } from '@supabase/supabase-js'
-import { chatTurn, expandCard, lockTrip, chatQA, publicTrip, directTrip, joinSession, listParticipants } from './chatController.js'
+import {
+  chatTurn, expandCard, lockTrip, chatQA, publicTrip, directTrip,
+  joinSession, listParticipants,
+  refineItinerary, replanWeather, checkPrices,
+  createPoll, votePoll,
+} from './chatController.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -54,6 +59,15 @@ app.post('/api/chat/expand-card', requireAuth, expandCard)
 app.post('/api/chat/qa', requireAuth, chatQA)
 app.post('/api/chat/direct', requireAuth, directTrip)
 app.post('/api/trips/lock', requireAuth, lockTrip)
+
+// Itinerary refinement + weather re-plan + price snapshot
+app.post('/api/chat/refine',          requireAuth, refineItinerary)
+app.post('/api/chat/replan-weather',  requireAuth, replanWeather)
+app.post('/api/prices/check',         requireAuth, checkPrices)
+
+// Polls (kind=poll messages)
+app.post('/api/polls/create', requireAuth, createPoll)
+app.post('/api/polls/vote',   requireAuth, votePoll)
 
 // Collaboration: accept an invite link + list current members
 app.post('/api/sessions/:id/join', requireAuth, joinSession)

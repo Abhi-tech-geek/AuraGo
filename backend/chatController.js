@@ -770,6 +770,305 @@ export async function directTrip(req, res) {
 
 
 // =====================================================================
+// 5c. POST /api/chat/refine  — conversational refinement of an itinerary
+// =====================================================================
+// User clicks "make Day 2 indoor" or "make it cheaper". We pull the open
+// itinerary, ask Groq to rewrite ONLY the parts that need to change, and
+// insert a fresh itinerary message attached to the same deck. The
+// previous itinerary stays in the feed so the user can compare/revert.
+export async function refineItinerary(req, res) {
+  try {
+    const { sessionId, itineraryMessageId, instruction } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    if (!instruction?.trim()) return res.status(400).json({ error: "missing instruction" });
+
+    const { data: itin, error: iErr } = await supabase.from("messages").select("*")
+      .eq("id", itineraryMessageId).single();
+    if (iErr || !itin || itin.kind !== "itinerary")
+      return res.status(404).json({ error: "itinerary not found" });
+
+    const oldPayload = itin.payload ?? {};
+
+    const sys = `You are AuraGo's refinement editor. You will be given an
+existing itinerary as JSON and a user instruction. Rewrite the itinerary
+to honour the instruction WITHOUT changing the destination, vibe, or
+travel_date. Keep the same JSON shape:
+{
+ "days": [{"day":1,"title":"...","activities":["...","..."]}],
+ "estimated_cost_inr": <int>,
+ "weather": {...same shape...},
+ "stays": [...same shape...],
+ "packing": [...8-12 items...],
+ "similar_destinations": [...same shape...]
+}
+Rules:
+- If the instruction implies a lower budget, lower stay costs + activity
+  costs and adjust estimated_cost_inr accordingly.
+- If the instruction says "indoor day N" or mentions weather, replace
+  outdoor activities on those day(s) with indoor alternatives at the
+  same destination — never change destination.
+- Keep the number of days the same unless the instruction says otherwise.
+- packing MUST stay 8-12 items in English.
+- Return JSON only. No prose.`;
+
+    const userMsg = `EXISTING ITINERARY:
+${JSON.stringify({
+  destination: oldPayload.destination,
+  vibe: oldPayload.vibe,
+  days: oldPayload.days,
+  estimated_cost_inr: oldPayload.estimated_cost_inr,
+  weather: oldPayload.weather,
+  stays: oldPayload.stays,
+  packing: oldPayload.packing,
+  similar_destinations: oldPayload.similar_destinations,
+})}
+
+INSTRUCTION: ${instruction}`;
+
+    let next = oldPayload;
+    try {
+      const text = await groqChat(sys, userMsg, { temperature: 0.4 });
+      const parsed = json(text);
+      // Merge — keep fields the LLM didn't return (photos, route_stops, etc.)
+      next = {
+        ...oldPayload,
+        ...parsed,
+        // Photos and other immutable bits stay as-is.
+        photos: oldPayload.photos,
+        route_stops: oldPayload.route_stops,
+        card_id: oldPayload.card_id,
+        destination: oldPayload.destination,
+        vibe: oldPayload.vibe,
+        travel_date: oldPayload.travel_date,
+        rag_verified: oldPayload.rag_verified,
+        rag_summary: oldPayload.rag_summary,
+        accessibility_notes: oldPayload.accessibility_notes,
+        citations: oldPayload.citations,
+      };
+    } catch (e) {
+      console.warn("refine generation failed:", e.message);
+      return res.status(502).json({ error: "refine failed", detail: e.message });
+    }
+
+    const { data: newMsg, error: nErr } = await supabase.from("messages").insert({
+      session_id: sessionId, role: "assistant", kind: "itinerary",
+      parent_message_id: itin.parent_message_id,
+      content: `Refined itinerary for ${oldPayload.destination}`,
+      payload: { ...next, refined_from: itineraryMessageId, refine_instruction: instruction },
+    }).select().single();
+    if (nErr) throw nErr;
+
+    return res.json({ ok: true, messageId: newMsg.id });
+  } catch (e) {
+    console.error("refineItinerary error", e);
+    return res.status(500).json({ error: "refine failed", detail: e.message });
+  }
+}
+
+
+// =====================================================================
+// 5d. POST /api/chat/replan-weather — weather-aware re-plan
+// =====================================================================
+// Fetches a fresh weather snippet via Serper for the destination, decides
+// whether days look rainy/extreme, and hands the resulting instruction to
+// the refine endpoint internally. Surfaced to the user as one button.
+export async function replanWeather(req, res) {
+  try {
+    const { sessionId, itineraryMessageId } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const { data: itin } = await supabase.from("messages").select("*")
+      .eq("id", itineraryMessageId).single();
+    if (!itin || itin.kind !== "itinerary")
+      return res.status(404).json({ error: "itinerary not found" });
+
+    const dest = itin.payload?.destination;
+    const date = itin.payload?.travel_date ?? "this week";
+    if (!dest) return res.status(400).json({ error: "missing destination" });
+
+    // Pull a few weather snippets + let Groq decide whether rain/storms
+    // are likely and which days to swap.
+    const search = await serper(`${dest} weather forecast ${date}`);
+    const snippets = (search.organic ?? []).slice(0, 5).map((o) =>
+      `- ${o.title}: ${o.snippet}`).join("\n");
+
+    const sys = `You are AuraGo's weather agent. Given a destination, the
+travel date, and live web snippets, decide if any days need an indoor
+re-plan. Return JSON only:
+{ "verdict": "ok" | "rejig",
+  "reason": "<one short user-facing line>",
+  "instruction": "<a refinement instruction the editor can act on, e.g. 'Make Day 2 indoor — rain is forecast' OR empty if verdict=ok>" }`;
+    const userMsg = `Destination: ${dest}
+Travel date: ${date}
+Live snippets:
+${snippets || "(no snippets)"}`;
+
+    let verdict;
+    try {
+      const text = await groqChat(sys, userMsg, { temperature: 0.1 });
+      verdict = json(text);
+    } catch (e) {
+      console.warn("weather verdict failed:", e.message);
+      return res.json({ ok: true, changed: false, reason: "weather check unavailable" });
+    }
+
+    if (verdict?.verdict === "ok" || !verdict?.instruction) {
+      return res.json({ ok: true, changed: false, reason: verdict?.reason ?? "weather looks fine" });
+    }
+
+    // Reuse refineItinerary by calling its body shape via a synthetic request.
+    req.body = {
+      sessionId,
+      itineraryMessageId,
+      instruction: verdict.instruction,
+    };
+    // Forward to refine — refine handles its own res.json/error.
+    return refineItinerary(req, res);
+  } catch (e) {
+    console.error("replanWeather error", e);
+    return res.status(500).json({ error: "replan failed", detail: e.message });
+  }
+}
+
+
+// =====================================================================
+// 5e. POST /api/prices/check — Serper-based live price snapshot
+// =====================================================================
+// We don't have a flight/hotel API yet, so this surfaces what Google
+// returns for "<origin> to <destination> flight prices <date>". Groq
+// extracts ₹ ranges from the snippets so the UI can show a card with
+// a min/median range + source links. Approximate, refresh-able.
+export async function checkPrices(req, res) {
+  try {
+    const { origin, destination, date } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    if (!origin || !destination) return res.status(400).json({ error: "missing origin/destination" });
+
+    const queries = [
+      `${origin} to ${destination} flight price ${date ?? ""}`.trim(),
+      `${origin} to ${destination} train price`,
+      `${destination} hotel price per night`,
+    ];
+    const results = await Promise.all(queries.map(serper));
+    const snippets = results.map((r, i) => ({
+      mode: ["flight", "train", "hotel"][i],
+      lines: (r.organic ?? []).slice(0, 4).map((o) =>
+        `- ${o.title}: ${o.snippet} [${o.link}]`).join("\n"),
+    }));
+
+    const sys = `You are AuraGo's price-snapshot agent. From the snippets,
+extract approximate INR price ranges. If a number is given in another
+currency, skip it. Return JSON only:
+{
+ "flight": { "low_inr": <int|null>, "high_inr": <int|null>, "source_url": <url|null> },
+ "train":  { "low_inr": <int|null>, "high_inr": <int|null>, "source_url": <url|null> },
+ "hotel":  { "low_inr": <int|null>, "high_inr": <int|null>, "source_url": <url|null> },
+ "note": "<short freshness caveat>"
+}`;
+    const userMsg = snippets.map((s) =>
+      `## ${s.mode}\n${s.lines || "(no results)"}`).join("\n\n");
+
+    let parsed = { flight: {}, train: {}, hotel: {}, note: "AI estimate from public listings — verify before booking." };
+    try {
+      const text = await groqChat(sys, userMsg, { temperature: 0 });
+      parsed = json(text);
+    } catch (e) {
+      console.warn("price extract failed:", e.message);
+    }
+
+    return res.json({
+      ok: true,
+      checked_at: new Date().toISOString(),
+      origin, destination, date: date ?? null,
+      prices: parsed,
+    });
+  } catch (e) {
+    console.error("checkPrices error", e);
+    return res.status(500).json({ error: "price check failed" });
+  }
+}
+
+
+// =====================================================================
+// 5f. Polls — create + vote
+// =====================================================================
+export async function createPoll(req, res) {
+  try {
+    const { sessionId, question, options } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+    if (!question?.trim() || !Array.isArray(options) || options.length < 2 || options.length > 6)
+      return res.status(400).json({ error: "need question + 2–6 options" });
+
+    // Generate stable ids per option so vote keys can reference them.
+    const opts = options.slice(0, 6).map((t, i) => ({
+      id: `o${i + 1}`,
+      text: String(t).slice(0, 80),
+    }));
+
+    const { data: msg, error } = await supabase.from("messages").insert({
+      session_id: sessionId,
+      author_id: userId,
+      role: "user",
+      kind: "poll",
+      content: question.slice(0, 200),
+      payload: {
+        question: question.slice(0, 200),
+        options: opts,
+        votes: {},          // userId → optionId
+        created_by: userId,
+      },
+    }).select().single();
+    if (error) throw error;
+    return res.json({ ok: true, messageId: msg.id });
+  } catch (e) {
+    console.error("createPoll error", e);
+    return res.status(500).json({ error: "poll create failed", detail: e.message });
+  }
+}
+
+export async function votePoll(req, res) {
+  try {
+    const { messageId, optionId } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "unauthorized" });
+
+    const { data: msg, error: mErr } = await supabase.from("messages").select("*")
+      .eq("id", messageId).single();
+    if (mErr || !msg || msg.kind !== "poll")
+      return res.status(404).json({ error: "poll not found" });
+
+    const optExists = (msg.payload?.options ?? []).some((o) => o.id === optionId);
+    if (!optExists) return res.status(400).json({ error: "unknown option" });
+
+    // Soft membership check: only members of the session can vote.
+    const { data: session } = await supabase.from("sessions")
+      .select("owner_id").eq("id", msg.session_id).single();
+    let isMember = session?.owner_id === userId;
+    if (!isMember) {
+      const { data: p } = await supabase.from("session_participants")
+        .select("user_id").eq("session_id", msg.session_id).eq("user_id", userId).maybeSingle();
+      isMember = !!p;
+    }
+    if (!isMember) return res.status(403).json({ error: "not a member" });
+
+    const nextVotes = { ...(msg.payload?.votes ?? {}), [userId]: optionId };
+    const nextPayload = { ...msg.payload, votes: nextVotes };
+    const { error: uErr } = await supabase.from("messages")
+      .update({ payload: nextPayload }).eq("id", messageId);
+    if (uErr) throw uErr;
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("votePoll error", e);
+    return res.status(500).json({ error: "vote failed", detail: e.message });
+  }
+}
+
+
+// =====================================================================
 // 6. POST /api/trips/lock  — finalize a destination
 // =====================================================================
 export async function lockTrip(req, res) {

@@ -15,7 +15,23 @@ import {
   Square, Bot, Share2, Check, Car, ChevronLeft, ChevronRight, ImageIcon,
   Mountain, Waves, TreePine, Droplets, Castle, Church, PawPrint, Compass,
   UserPlus, Users, ExternalLink, Map as MapIcon,
+  Wand2, CloudDrizzle, BarChart3, MessageSquare, Tag, RefreshCw, Trash2,
 } from "lucide-react";
+
+// Auth helper used by the new endpoints — pulls the bearer once.
+async function authedFetch(url, opts = {}) {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return fetch(url, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers ?? {}),
+    },
+    credentials: "include",
+  });
+}
 
 // Map of backend "hint_category" → display label rendered in the mystery
 // card's text-only hint area. Sync with HINT_CATEGORIES in
@@ -59,6 +75,7 @@ export default function ChatInterface({
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState("");
   const [sending, setSending]     = useState(false);
+  const [chatOpen, setChatOpen]   = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [openCard, setOpenCard]   = useState({});
   const [modalOpen, setModalOpen] = useState(false);
@@ -113,6 +130,13 @@ export default function ChatInterface({
             filter: `session_id=eq.${sessionId}` },
           (p) => setMessages((prev) =>
             prev.some((x) => x.id === p.new.id) ? prev : [...prev, p.new]))
+      // Poll votes mutate messages.payload — sync those updates so every
+      // member sees the bar chart move live.
+      .on("postgres_changes",
+          { event: "UPDATE", schema: "public", table: "messages",
+            filter: `session_id=eq.${sessionId}` },
+          (p) => setMessages((prev) =>
+            prev.map((x) => x.id === p.new.id ? { ...x, ...p.new } : x)))
       .on("postgres_changes",
           { event: "INSERT", schema: "public", table: "trips",
             filter: `session_id=eq.${sessionId}` },
@@ -447,6 +471,7 @@ export default function ChatInterface({
                             onBack={() => onBackToDeck(m.id)}
                             onPickSimilar={handlePickSimilar}
                             onLocked={(destination) => onSessionTitleChange?.(sessionId, destination)}
+                            onOpenChat={() => setChatOpen(true)}
                           />
                         )}
                       </AnimatePresence>
@@ -456,6 +481,8 @@ export default function ChatInterface({
                 if (m.kind === "itinerary") return null;
                 if (m.kind === "qa_notice") return <QANotice key={m.id} message={m} />;
                 if (m.kind === "lock_event") return <LockChip key={m.id} message={m} />;
+                if (m.kind === "poll") return <PollCard key={m.id} message={m} currentUserId={currentUser.id} />;
+                if (m.kind === "chat") return null; // chat lives in the drawer, not the main feed
                 return <MessageBubble key={m.id} message={m} />;
               })}
             </AnimatePresence>
@@ -540,6 +567,33 @@ export default function ChatInterface({
       />
 
       <ConciergeChat context={openItineraryContext(messages, openCard)} />
+
+      {/* Side-thread chat between trip members (kind=chat messages) */}
+      <ChatDrawer
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        sessionId={sessionId}
+        messages={messages}
+        currentUserId={currentUser.id}
+      />
+
+      {/* Floating "trip chat" toggle — only meaningful once a session has
+          members. Always visible so the host can open it before others join. */}
+      <motion.button
+        onClick={() => setChatOpen(true)}
+        whileHover={{ scale: 1.06 }}
+        whileTap={{ scale: 0.94 }}
+        className="glass fixed bottom-24 right-4 z-30 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:bottom-28 sm:right-6"
+        title="Trip chat"
+        aria-label="Open trip chat"
+      >
+        <MessageSquare size={18} className="accent-text" />
+        {messages.filter((m) => m.kind === "chat").length > 0 && (
+          <span className="accent-bg absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold text-slate-900">
+            {messages.filter((m) => m.kind === "chat").length}
+          </span>
+        )}
+      </motion.button>
     </div>
   );
 }
@@ -953,7 +1007,7 @@ function PuzzleArt({ index }) {
 // =====================================================================
 // ItineraryView — deep-dive panel with route picker + budget breakdown
 // =====================================================================
-function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimilar, onLocked }) {
+function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimilar, onLocked, onOpenChat }) {
   const p = itinerary.payload || {};
   const [locking, setLocking] = useState(false);
   const [locked, setLocked]   = useState(p.locked ?? false);
@@ -961,6 +1015,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
   const [shareCopied, setShareCopied] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
+  const [refining, setRefining] = useState(false);
+  const [replanBusy, setReplanBusy] = useState(false);
+  const [replanMsg, setReplanMsg] = useState(null);
 
   const card = useMemo(
     () => (deck?.payload?.cards ?? []).find((c) => c.id === p.card_id),
@@ -1155,6 +1212,17 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
             {inviteCopied ? <Check size={12} className="accent-text" /> : <UserPlus size={12} />}
             {inviteCopied ? "Invite copied" : "Invite friends"}
           </motion.button>
+          <CreatePoll sessionId={sessionId} />
+          <motion.button
+            onClick={onOpenChat}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.95 }}
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
+            title="Open trip chat thread"
+          >
+            <MessageSquare size={12} className="accent-text" />
+            Chat
+          </motion.button>
           {locked && tripId && (
             <button
               onClick={handleShare}
@@ -1216,6 +1284,47 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
 
       {/* WEATHER */}
       {p.weather && <WeatherCard weather={p.weather} travelDate={p.travel_date} />}
+
+      {/* Re-plan around live weather — fetches Serper forecast snippets and
+          asks the refine endpoint to swap rainy-day activities for indoor. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <motion.button
+          onClick={async () => {
+            if (replanBusy) return;
+            setReplanBusy(true); setReplanMsg(null);
+            try {
+              const r = await authedFetch("/api/chat/replan-weather", {
+                method: "POST",
+                body: JSON.stringify({ sessionId, itineraryMessageId: itinerary.id }),
+              });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(j?.error || "replan failed");
+              setReplanMsg(j.changed ? "New itinerary created below ⤵" : (j.reason || "Weather looks fine — no changes."));
+            } catch (e) {
+              setReplanMsg(`Couldn't check: ${e.message}`);
+            } finally {
+              setReplanBusy(false);
+            }
+          }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          disabled={replanBusy}
+          className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[12px] hover:bg-white/[0.08] disabled:opacity-50"
+        >
+          {replanBusy
+            ? <Loader2 size={12} className="animate-spin accent-text" />
+            : <CloudDrizzle size={12} className="accent-text" />}
+          {replanBusy ? "Checking forecast…" : "Re-plan around weather"}
+        </motion.button>
+        {replanMsg && <span className="text-[11px] text-slate-400">{replanMsg}</span>}
+      </div>
+
+      {/* Live price snapshot — flight / train / hotel ranges via Serper */}
+      <PriceCard
+        origin={prefs.origin}
+        destination={p.destination}
+        date={p.travel_date || prefs.start_date}
+      />
 
       {/* MAP */}
       <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
@@ -1445,6 +1554,20 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         <span className="font-medium">Grand total</span>
         <span className="serif text-xl">₹{fmtINR(grandTotal)}</span>
       </div>
+
+      {/* Conversational refinement — chips + free-text */}
+      <RefineComposer
+        sessionId={sessionId}
+        itineraryMessageId={itinerary.id}
+        onRefining={setRefining}
+        disabled={locked}
+      />
+      {refining && (
+        <div className="mt-2 flex items-center gap-2 text-[12px] text-slate-400">
+          <Loader2 size={12} className="animate-spin accent-text" />
+          Rewriting the plan…
+        </div>
+      )}
     </motion.section>
   );
 }
@@ -1930,3 +2053,457 @@ function WeatherCard({ weather, travelDate }) {
     </div>
   );
 }
+
+
+// =====================================================================
+// PollCard — renders kind=poll messages with live vote bars
+// =====================================================================
+function PollCard({ message, currentUserId }) {
+  const payload = message.payload ?? {};
+  const options = payload.options ?? [];
+  const votes = payload.votes ?? {};
+  const totalVotes = Object.keys(votes).length;
+  const myVote = votes[currentUserId] ?? null;
+  const [voting, setVoting] = useState(null);
+
+  const counts = options.map((o) => ({
+    ...o,
+    n: Object.values(votes).filter((v) => v === o.id).length,
+  }));
+  const max = Math.max(1, ...counts.map((c) => c.n));
+
+  const cast = async (optionId) => {
+    if (voting) return;
+    setVoting(optionId);
+    try {
+      await authedFetch("/api/polls/vote", {
+        method: "POST",
+        body: JSON.stringify({ messageId: message.id, optionId }),
+      });
+    } catch (e) {
+      console.error("vote failed", e);
+    } finally {
+      setVoting(null);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="glass rounded-2xl border border-white/[0.08] p-4"
+    >
+      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <BarChart3 size={12} className="accent-text" />
+        Poll · {totalVotes} {totalVotes === 1 ? "vote" : "votes"}
+      </div>
+      <div className="mb-3 text-[15px] font-medium text-slate-100">{payload.question}</div>
+      <div className="space-y-2">
+        {counts.map((o) => {
+          const pct = totalVotes === 0 ? 0 : Math.round((o.n / totalVotes) * 100);
+          const isMine = myVote === o.id;
+          return (
+            <button
+              key={o.id}
+              onClick={() => cast(o.id)}
+              disabled={!!voting}
+              className="group relative w-full overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left text-[13.5px] transition hover:border-white/20 disabled:cursor-wait"
+            >
+              {/* fill bar */}
+              <motion.div
+                aria-hidden="true"
+                className="accent-soft-bg absolute inset-y-0 left-0 z-0 rounded-xl"
+                initial={{ width: 0 }}
+                animate={{ width: `${pct}%` }}
+                transition={{ type: "spring", stiffness: 90, damping: 18 }}
+              />
+              <div className="relative z-10 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  {isMine && <Check size={12} className="accent-text" />}
+                  <span className={isMine ? "accent-text font-semibold" : ""}>{o.text}</span>
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {o.n} · {pct}%
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+
+// =====================================================================
+// CreatePoll — modal launcher for adding a poll to the trip thread
+// =====================================================================
+function CreatePoll({ sessionId, onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const cleaned = options.map((o) => o.trim()).filter(Boolean);
+    if (!question.trim() || cleaned.length < 2 || busy) return;
+    setBusy(true);
+    try {
+      const r = await authedFetch("/api/polls/create", {
+        method: "POST",
+        body: JSON.stringify({ sessionId, question: question.trim(), options: cleaned }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setOpen(false);
+      setQuestion(""); setOptions(["", ""]);
+      onCreated?.();
+    } catch (e) {
+      console.error("poll create failed", e);
+      alert("Couldn't create the poll. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <motion.button
+        onClick={() => setOpen(true)}
+        whileHover={{ scale: 1.04 }}
+        whileTap={{ scale: 0.95 }}
+        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
+        title="Ask your group a question"
+      >
+        <BarChart3 size={12} className="accent-text" />
+        New poll
+      </motion.button>
+      {open && (
+        <div
+          className="aura-backdrop"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+        >
+          <div className="aura-modal glass-strong rounded-3xl p-5 sm:p-6">
+            <div className="mb-3">
+              <h3 className="serif text-2xl">Ask your group</h3>
+              <p className="mt-1 text-[12px] text-slate-400">
+                Add 2–6 options. Everyone in the trip can vote, results update live.
+              </p>
+            </div>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="e.g. Beach ya mountain?"
+              className="accent-ring mb-3 w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm focus:outline-none"
+              maxLength={200}
+            />
+            {options.map((o, i) => (
+              <div key={i} className="mb-2 flex items-center gap-2">
+                <input
+                  value={o}
+                  onChange={(e) => setOptions((s) => s.map((x, j) => j === i ? e.target.value : x))}
+                  placeholder={`Option ${i + 1}`}
+                  className="accent-ring flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm focus:outline-none"
+                  maxLength={80}
+                />
+                {options.length > 2 && (
+                  <button
+                    onClick={() => setOptions((s) => s.filter((_, j) => j !== i))}
+                    className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-slate-400 hover:bg-white/[0.06]"
+                    title="Remove option"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {options.length < 6 && (
+              <button
+                onClick={() => setOptions((s) => [...s, ""])}
+                className="mb-4 text-[12px] text-slate-400 hover:accent-text hover:underline"
+              >
+                + Add another option
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOpen(false)}
+                className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/[0.05]"
+              >Cancel</button>
+              <button
+                onClick={submit} disabled={busy || !question.trim() || options.filter((o) => o.trim()).length < 2}
+                className="accent-bg accent-glow flex-1 rounded-xl py-2.5 text-sm font-semibold text-slate-900 disabled:opacity-50"
+              >
+                {busy ? "Creating…" : "Create poll"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+// =====================================================================
+// RefineComposer — "make it cheaper", "swap day 2 indoor", custom text
+// =====================================================================
+function RefineComposer({ sessionId, itineraryMessageId, onRefining, disabled }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chips = [
+    "Make it cheaper",
+    "More food spots",
+    "Slower pace",
+    "Indoor Day 2",
+    "More photo spots",
+  ];
+
+  const send = async (instruction) => {
+    const clean = (instruction ?? text).trim();
+    if (!clean || busy || disabled) return;
+    setBusy(true);
+    onRefining?.(true);
+    try {
+      const r = await authedFetch("/api/chat/refine", {
+        method: "POST",
+        body: JSON.stringify({ sessionId, itineraryMessageId, instruction: clean }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      setText("");
+    } catch (e) {
+      console.error("refine failed", e);
+      alert("Refine failed. Try again in a moment.");
+    } finally {
+      setBusy(false);
+      onRefining?.(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
+      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+        <Wand2 size={12} className="accent-text" />
+        Tweak this plan
+      </div>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {chips.map((c) => (
+          <button
+            key={c}
+            onClick={() => send(c)}
+            disabled={busy || disabled}
+            className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-300 hover:bg-white/[0.08] disabled:opacity-50"
+          >{c}</button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          placeholder="Or type your own instruction…"
+          disabled={busy || disabled}
+          className="flex-1 bg-transparent text-sm focus:outline-none"
+        />
+        <button
+          onClick={() => send()}
+          disabled={busy || disabled || !text.trim()}
+          className="accent-bg accent-glow grid h-8 w-8 place-items-center rounded-lg text-slate-900 disabled:opacity-50"
+          title="Refine"
+        >
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// =====================================================================
+// PriceCard — Serper-driven live-ish price snapshot
+// =====================================================================
+function PriceCard({ origin, destination, date }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchPrices = async () => {
+    if (!origin || !destination || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await authedFetch("/api/prices/check", {
+        method: "POST",
+        body: JSON.stringify({ origin, destination, date }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const j = await r.json();
+      setData(j);
+    } catch (e) {
+      setError(e.message ?? "lookup failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { fetchPrices(); /* eslint-disable-next-line */ }, [origin, destination, date]);
+
+  const segs = [
+    { key: "flight", icon: Plane, label: "Flight" },
+    { key: "train",  icon: Train, label: "Train" },
+    { key: "hotel",  icon: Hotel, label: "Hotel/night" },
+  ];
+
+  return (
+    <div className="mb-5 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
+          <Tag size={12} className="accent-text" />
+          Live price snapshot
+        </div>
+        <button
+          onClick={fetchPrices} disabled={busy}
+          className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/[0.08]"
+          title="Refresh"
+        >
+          <RefreshCw size={10} className={busy ? "animate-spin" : ""} />
+          {busy ? "Checking…" : "Refresh"}
+        </button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        {segs.map((s) => {
+          const p = data?.prices?.[s.key] ?? {};
+          const lo = p.low_inr, hi = p.high_inr;
+          const display = lo && hi ? `₹${fmtINR(lo)} – ₹${fmtINR(hi)}`
+                         : lo ? `from ₹${fmtINR(lo)}`
+                         : hi ? `up to ₹${fmtINR(hi)}`
+                         : "—";
+          return (
+            <a
+              key={s.key}
+              href={p.source_url || undefined}
+              target="_blank" rel="noreferrer"
+              className={`flex items-center justify-between gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 ${p.source_url ? "hover:border-white/20 hover:bg-white/[0.05]" : "cursor-default"}`}
+            >
+              <span className="flex items-center gap-2 text-[12px] text-slate-300">
+                <s.icon size={13} className="accent-text" /> {s.label}
+              </span>
+              <span className="text-[13px] font-medium text-slate-100">{display}</span>
+            </a>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] text-slate-500">
+        {error ? `Couldn't fetch: ${error}` : (data?.prices?.note ?? "AI estimate from public listings — verify on each booking site.")}
+      </div>
+    </div>
+  );
+}
+
+
+// =====================================================================
+// ChatDrawer — group chat side panel (kind=chat messages)
+// =====================================================================
+function ChatDrawer({ open, onClose, sessionId, messages, currentUserId }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chatMsgs = messages.filter((m) => m.kind === "chat");
+  const scroller = useRef(null);
+
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+  }, [chatMsgs.length, open]);
+
+  const send = async () => {
+    const clean = text.trim();
+    if (!clean || busy) return;
+    setBusy(true);
+    try {
+      // members can insert their own user-role messages directly via RLS.
+      await supabase.from("messages").insert({
+        session_id: sessionId,
+        author_id: currentUserId,
+        role: "user",
+        kind: "chat",
+        content: clean,
+      });
+      setText("");
+    } catch (e) {
+      console.error("chat send failed", e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          />
+          <motion.aside
+            initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
+            transition={{ type: "spring", stiffness: 220, damping: 28 }}
+            className="glass-strong fixed right-0 top-0 z-50 flex h-[100dvh] w-full max-w-md flex-col border-l border-white/[0.08]"
+          >
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={14} className="accent-text" />
+                <h3 className="text-sm font-medium">Trip chat</h3>
+              </div>
+              <button
+                onClick={onClose}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                aria-label="Close chat"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div ref={scroller} className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+              {chatMsgs.length === 0 && (
+                <div className="grid h-full place-items-center text-center text-[12.5px] text-slate-500">
+                  <div>
+                    <div className="mb-2 text-2xl">💬</div>
+                    No messages yet. <br/> Side-chat with your trip crew here.
+                  </div>
+                </div>
+              )}
+              {chatMsgs.map((m) => {
+                const mine = m.author_id === currentUserId;
+                return (
+                  <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-[13.5px] ${
+                      mine ? "accent-soft-bg accent-text" : "border border-white/10 bg-white/[0.03] text-slate-200"
+                    }`}>
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="border-t border-white/[0.06] px-3 py-3">
+              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                <input
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+                  placeholder="Message your trip crew…"
+                  disabled={busy}
+                  className="flex-1 bg-transparent text-sm focus:outline-none"
+                />
+                <button
+                  onClick={send} disabled={busy || !text.trim()}
+                  className="accent-bg accent-glow grid h-8 w-8 place-items-center rounded-lg text-slate-900 disabled:opacity-50"
+                >
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                </button>
+              </div>
+            </div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
