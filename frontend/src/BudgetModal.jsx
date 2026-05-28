@@ -38,7 +38,7 @@ const formatPretty = (iso) => {
   return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 };
 
-export default function BudgetModal({ open, initial, destinationHint, onClose, onSubmit }) {
+export default function BudgetModal({ open, initial, destinationHint, composerMode, onClose, onSubmit }) {
   const [mode, setMode]                 = useState(initial?.mode ?? "elite");
   const [country, setCountry]           = useState(initial?.country ?? "India");
   const [origin, setOrigin]             = useState(initial?.origin ?? "Delhi");
@@ -48,11 +48,16 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
   const [startDate, setStartDate]       = useState(initial?.start_date ?? "");
   const [budget, setBudget]             = useState(initial?.budget_inr ?? 150000);
   const [universalAccess, setAccess]    = useState(initial?.universal_access ?? false);
+  // Editable "where to" — populated from destinationHint or typed in-modal
+  // when the user is in I-know-where mode. Empty = surprise-deck flow.
+  const [destination, setDestination]   = useState(destinationHint ?? "");
   // Multi-stop route: when 2+ stops are listed we skip the mystery deck and
   // build a chained itinerary instead.
   const initialStops = normalizeStops(initial?.route_stops ?? []);
   const [multiStop, setMultiStop]       = useState(initialStops.length >= 2);
   const [stopsText, setStopsText]       = useState(initialStops.join("\n"));
+
+  const showDestField = composerMode === "direct" || !!destinationHint;
 
   // Reset to incoming initial when re-opened
   useEffect(() => {
@@ -66,10 +71,11 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
     setStartDate(initial.start_date ?? "");
     setBudget(initial.budget_inr ?? 150000);
     setAccess(initial.universal_access ?? false);
+    setDestination(destinationHint ?? "");
     const stops = normalizeStops(initial.route_stops ?? []);
     setMultiStop(stops.length >= 2);
     setStopsText(stops.join("\n"));
-  }, [open, initial]);
+  }, [open, initial, destinationHint]);
 
   // Sensible default budget when toggling mode
   const handleModeChange = (m) => {
@@ -92,14 +98,15 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
     >
       <div className="aura-modal glass-strong rounded-3xl p-5 sm:p-8">
         <div className="mb-5">
-          {destinationHint ? (
+          {showDestField ? (
             <>
               <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-wider text-slate-300">
-                <span className="text-sm">📍</span> Destination
+                <span className="text-sm">📍</span> I know where I'm going
               </div>
-              <h2 className="serif text-3xl">Trip to {destinationHint}</h2>
+              <h2 className="serif text-3xl">Where to?</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Confirm a few details so AuraGo plans the right kind of trip.
+                Type your destination. AuraGo will plan that exact place and
+                throw in 4 similar-vibe nearby spots in case your mood changes.
               </p>
             </>
           ) : (
@@ -111,6 +118,29 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
             </>
           )}
         </div>
+
+        {/* destination input — only in I-know-where mode */}
+        {showDestField && (
+          <div className="mb-5">
+            <label className="mb-2 block text-[11px] uppercase tracking-wider text-slate-400">
+              Where to?
+            </label>
+            <input
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              placeholder="e.g. Spiti Valley, Goa, Lisbon"
+              list="aura-cities-modal"
+              autoComplete="off"
+              autoFocus
+              className="accent-ring w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm focus:outline-none"
+            />
+            <datalist id="aura-cities-modal">
+              {citiesFor(country).map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+        )}
 
         {/* mode */}
         <div className="mb-5">
@@ -371,6 +401,7 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
               country,
               has_passport: hasPassport,
               origin,
+              destination: destination.trim() || null,
               party_size: partySize,
               days,
               start_date: startDate,
@@ -380,11 +411,11 @@ export default function BudgetModal({ open, initial, destinationHint, onClose, o
             })}
             className="accent-bg accent-glow flex-1 rounded-xl py-3 text-sm font-semibold text-slate-900"
           >
-            {destinationHint
-              ? `Plan ${destinationHint} →`
-              : (multiStop && normalizeStops(stopsText).length >= 2
-                  ? `Plan my ${normalizeStops(stopsText).length}-stop route →`
-                  : "Find my 8 options →")}
+            {multiStop && normalizeStops(stopsText).length >= 2
+              ? `Plan my ${normalizeStops(stopsText).length}-stop route →`
+              : (showDestField && destination.trim())
+                ? `Plan ${destination.trim()} →`
+                : "Find my 8 options →"}
           </button>
         </div>
       </div>

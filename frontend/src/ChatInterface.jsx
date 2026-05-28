@@ -321,10 +321,13 @@ export default function ChatInterface({
     const stops = Array.isArray(next.route_stops)
       ? next.route_stops.filter(Boolean)
       : [];
-    if (pendingDestination) {
-      const dest = pendingDestination;
+    // The modal can now carry a destination too (I-know-where mode). It
+    // takes precedence over the older composer-driven pendingDestination
+    // path, but we still honour pendingDestination as a fallback.
+    const modalDest = (next.destination || "").trim();
+    const dest = modalDest || pendingDestination;
+    if (dest) {
       setPendingDestination(null);
-      // Pass `next` directly so we don't read stale prefs from closure.
       sendDirect(dest, next);
     } else if (stops.length >= 2) {
       // Multi-stop: skip the mystery deck entirely — there's nothing to "pick"
@@ -398,16 +401,26 @@ export default function ChatInterface({
       {/* ================= HEADER ================= */}
       <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-8 sm:py-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          {/* Always-visible sidebar toggle (works on mobile + desktop) */}
+          {/* Always-visible sidebar toggle (works on mobile + desktop).
+              Slightly bigger touch target, accent glow on hover, and the
+              icon rotates 90° when the sidebar is open so the affordance
+              reads visually. */}
           <motion.button
             onClick={onToggleSidebar ?? onOpenSidebar}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.92 }}
-            transition={{ type: "spring", stiffness: 420, damping: 18 }}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 420, damping: 16 }}
+            className="group relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-200 transition hover:border-[var(--accent)]/40 hover:bg-white/[0.08] hover:text-[var(--accent)] hover:shadow-[0_0_0_3px_var(--ring)]"
             aria-label={sidebarPinned ? "Hide trips" : "Show trips"}
+            title={sidebarPinned ? "Hide trip list" : "Show trip list"}
           >
-            <Menu size={16} />
+            <motion.span
+              animate={{ rotate: sidebarPinned ? 0 : 90 }}
+              transition={{ type: "spring", stiffness: 320, damping: 22 }}
+              className="grid place-items-center"
+            >
+              <Menu size={17} />
+            </motion.span>
           </motion.button>
           {/* Brand block — collapses to icon-only on desktop when sidebar is
               pinned (avoids the duplicate AuraGo) */}
@@ -443,6 +456,7 @@ export default function ChatInterface({
               <Welcome
                 loadError={loadError}
                 prefs={prefs}
+                composerMode={composerMode}
                 onOpenModal={() => setModalOpen(true)}
                 onPickDestination={(name) => { setPendingDestination(name); setModalOpen(true); }}
                 onStarter={(overrides) => {
@@ -583,6 +597,7 @@ export default function ChatInterface({
         open={modalOpen}
         initial={prefs}
         destinationHint={pendingDestination}
+        composerMode={composerMode}
         onClose={() => { setModalOpen(false); setPendingDestination(null); }}
         onSubmit={handleModalSubmit}
       />
@@ -711,7 +726,9 @@ function ComposerModeBtn({ active, onClick, icon, label }) {
   );
 }
 
-function Welcome({ loadError, prefs, onOpenModal, onPickDestination, onStarter }) {
+function Welcome({ loadError, prefs, composerMode, onOpenModal, onPickDestination, onStarter }) {
+  const isDirect = composerMode === "direct";
+
   // Quick-pick destinations swap based on whether the user has a passport.
   // We bias toward hidden-gem-ish names rather than the obvious touristy
   // ones — matches what the candidate-pool prompt already does.
@@ -737,8 +754,7 @@ function Welcome({ loadError, prefs, onOpenModal, onPickDestination, onStarter }
   // Theme starters — one-tap presets that pre-fill the modal.
   const starters = [
     { label: "Weekend escape", emoji: "🏖️", desc: "≈ ₹15k · 3 days", overrides: { mode: "sasta", budget_inr: 15000, days: 3, party_size: 2 } },
-    { label: "Honeymoon vibes",  emoji: "💞", desc: "≈ ₹2L · 6 days",  overrides: { mode: "elite", budget_inr: 200000, days: 6, party_size: 2 } },
-    { label: "Solo backpacker",  emoji: "🎒", desc: "≈ ₹10k · 5 days", overrides: { mode: "sasta", budget_inr: 10000, days: 5, party_size: 1 } },
+    { label: "Solo backpacker", emoji: "🎒", desc: "≈ ₹10k · 5 days", overrides: { mode: "sasta", budget_inr: 10000, days: 5, party_size: 1 } },
   ];
 
   return (
@@ -774,69 +790,79 @@ function Welcome({ loadError, prefs, onOpenModal, onPickDestination, onStarter }
           transition={{ delay: 0.05, duration: 0.5 }}
           className="serif mb-2 text-3xl leading-tight sm:text-4xl"
         >
-          Where to next?
+          {isDirect ? "Where to next?" : "Let AuraGo surprise you."}
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.12, duration: 0.45 }}
           className="text-[14.5px] leading-relaxed text-slate-300"
         >
-          Pick a hidden gem below, choose a theme starter, or describe your
-          dream trip in the box at the bottom. I'll come back with 8 verified
-          options.
+          {isDirect
+            ? "Pick a hidden gem below, choose a starter preset, or type the place you already have in mind. I'll plan that exact trip and suggest similar nearby spots in case your mood changes."
+            : "Tell me your vibe in the box at the bottom — budget, days, who's coming. I'll come back with 8 cross-checked options you've probably never heard of."}
         </motion.p>
 
-        {/* Quick-pick destination chips */}
-        <div className="mt-5">
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-            <MapPin size={10} className="accent-text" /> Hidden gems · {country}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {picks.map((name, i) => (
-              <motion.button
-                key={name}
-                onClick={() => onPickDestination?.(name)}
-                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.18 + i * 0.04, duration: 0.35 }}
-                whileHover={{ y: -2, scale: 1.04 }}
-                whileTap={{ scale: 0.95 }}
-                className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12.5px] text-slate-200 hover:border-white/20 hover:bg-white/[0.06]"
-              >
-                {name}
-              </motion.button>
-            ))}
-          </div>
-        </div>
+        {/* Chips + starters live ONLY in "I know where" mode — surprise
+            mode is intentionally clean so the user goes straight to the
+            composer textarea. */}
+        {isDirect && (
+          <>
+            <div className="mt-5">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+                <MapPin size={10} className="accent-text" /> Hidden gems · {country}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {picks.map((name, i) => (
+                  <motion.button
+                    key={name}
+                    onClick={() => onPickDestination?.(name)}
+                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.18 + i * 0.04, duration: 0.35 }}
+                    whileHover={{ y: -2, scale: 1.04 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12.5px] text-slate-200 hover:border-white/20 hover:bg-white/[0.06]"
+                  >
+                    {name}
+                  </motion.button>
+                ))}
+              </div>
+            </div>
 
-        {/* Theme starter cards */}
-        <div className="mt-5">
-          <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-            <Sparkles size={10} className="accent-text" /> Quick starters
-          </div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {starters.map((s, i) => (
-              <motion.button
-                key={s.label}
-                onClick={() => onStarter?.(s.overrides)}
-                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 + i * 0.06 }}
-                whileHover={{ y: -3 }}
-                className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-3 text-left transition hover:border-white/20 hover:bg-white/[0.05]"
-              >
-                <div className="mb-1 text-2xl">{s.emoji}</div>
-                <div className="text-[13.5px] font-medium text-slate-100">{s.label}</div>
-                <div className="text-[11.5px] text-slate-400">{s.desc}</div>
-              </motion.button>
-            ))}
-          </div>
-        </div>
+            <div className="mt-5">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+                <Sparkles size={10} className="accent-text" /> Quick starters
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {starters.map((s, i) => (
+                  <motion.button
+                    key={s.label}
+                    onClick={() => onStarter?.(s.overrides)}
+                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.35 + i * 0.06 }}
+                    whileHover={{ y: -3 }}
+                    className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-3 text-left transition hover:border-white/20 hover:bg-white/[0.05]"
+                  >
+                    <div className="mb-1 text-2xl">{s.emoji}</div>
+                    <div className="text-[13.5px] font-medium text-slate-100">{s.label}</div>
+                    <div className="text-[11.5px] text-slate-400">{s.desc}</div>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Surprise-mode tip — small hint instead of chips */}
+        {!isDirect && (
+          <p className="mt-4 text-xs text-slate-400">
+            Try: <em>"Plan a budget trip for 2 from Bangalore"</em> · <em>"Elite honeymoon under ₹2L"</em>
+          </p>
+        )}
 
         {loadError && (
           <p className="mt-4 text-[12.5px] text-amber-200">{loadError}</p>
         )}
 
-        {/* primary CTA — still a single canonical button so first-timers know
-            where to start, but it's no longer the only entry point. */}
         <motion.button
           onClick={onOpenModal}
           whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
