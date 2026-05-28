@@ -401,26 +401,20 @@ export default function ChatInterface({
       {/* ================= HEADER ================= */}
       <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-3 sm:px-8 sm:py-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          {/* Always-visible sidebar toggle (works on mobile + desktop).
-              Slightly bigger touch target, accent glow on hover, and the
-              icon rotates 90° when the sidebar is open so the affordance
-              reads visually. */}
+          {/* Sidebar toggle. Always visible on mobile (the sidebar overlay
+              uses its own state). On desktop it hides when the sidebar is
+              already pinned open — in that case the PanelLeftClose icon
+              inside the sidebar header handles collapsing. */}
           <motion.button
             onClick={onToggleSidebar ?? onOpenSidebar}
             whileHover={{ scale: 1.08 }}
             whileTap={{ scale: 0.9 }}
             transition={{ type: "spring", stiffness: 420, damping: 16 }}
-            className="group relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-200 transition hover:border-[var(--accent)]/40 hover:bg-white/[0.08] hover:text-[var(--accent)] hover:shadow-[0_0_0_3px_var(--ring)]"
-            aria-label={sidebarPinned ? "Hide trips" : "Show trips"}
-            title={sidebarPinned ? "Hide trip list" : "Show trip list"}
+            className={`group relative grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-slate-200 transition hover:border-[var(--accent)]/40 hover:bg-white/[0.08] hover:text-[var(--accent)] hover:shadow-[0_0_0_3px_var(--ring)] ${sidebarPinned ? "md:hidden" : ""}`}
+            aria-label="Show trips"
+            title="Show trip list"
           >
-            <motion.span
-              animate={{ rotate: sidebarPinned ? 0 : 90 }}
-              transition={{ type: "spring", stiffness: 320, damping: 22 }}
-              className="grid place-items-center"
-            >
-              <Menu size={17} />
-            </motion.span>
+            <Menu size={17} />
           </motion.button>
           {/* Brand block — collapses to icon-only on desktop when sidebar is
               pinned (avoids the duplicate AuraGo) */}
@@ -448,14 +442,7 @@ export default function ChatInterface({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8"
-        style={{
-          // Reserve room for the fixed footer composer; collapse that space
-          // back when there's no composer so the welcome doesn't sit weirdly
-          // high on screen.
-          paddingBottom: messages.length > 0
-            ? "calc(10rem + env(safe-area-inset-bottom))"
-            : "calc(2rem + env(safe-area-inset-bottom))",
-        }}
+        style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom))" }}
       >
         <LayoutGroup>
           <div className="flex flex-col gap-5">
@@ -524,11 +511,7 @@ export default function ChatInterface({
         </LayoutGroup>
       </motion.main>
 
-      {/* ================= COMPOSER =================
-          Hidden on the empty welcome state so "Start a trip" is the sole
-          entry point. Reveals once the session has any message (after the
-          first deck is generated). */}
-      {messages.length > 0 && (
+      {/* ================= COMPOSER ================= */}
       <footer
         className={`safe-bottom-pad safe-px fixed bottom-0 right-0 z-20 px-3 pt-2 transition-[left] duration-300 ease-out sm:px-8 ${sidebarPinned ? "left-0 md:left-72" : "left-0"}`}
         style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
@@ -603,7 +586,6 @@ export default function ChatInterface({
         </div>
         <ComposerTagline />
       </footer>
-      )}
 
       <BudgetModal
         open={modalOpen}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, X, Sparkles, LogOut, BarChart3 } from "lucide-react";
+import { Plus, Trash2, X, Sparkles, LogOut, BarChart3, PanelLeftClose } from "lucide-react";
 
 const MAX_SESSIONS = 5;
 
@@ -15,6 +15,7 @@ export default function Sidebar({
   pinned = true,
   open,
   onClose,
+  onTogglePin,
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const atLimit = sessions.length >= MAX_SESSIONS;
@@ -49,13 +50,27 @@ export default function Sidebar({
             </div>
             <span className="serif text-xl">AuraGo</span>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-white/10 p-1.5 text-slate-300 hover:bg-white/[0.06] md:hidden"
-            aria-label="Close sidebar"
-          >
-            <X size={14} />
-          </button>
+          {/* Mobile: close overlay. Desktop: collapse (unpin). */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-white/10 p-1.5 text-slate-300 hover:bg-white/[0.06] md:hidden"
+              aria-label="Close sidebar"
+            >
+              <X size={14} />
+            </button>
+            <motion.button
+              onClick={onTogglePin}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 420, damping: 18 }}
+              className="hidden rounded-lg border border-white/10 p-1.5 text-slate-300 transition hover:border-[var(--accent)]/40 hover:text-[var(--accent)] md:inline-flex"
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+            >
+              <PanelLeftClose size={15} />
+            </motion.button>
+          </div>
         </div>
 
         {/* new trip */}

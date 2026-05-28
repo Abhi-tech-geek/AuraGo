@@ -327,6 +327,7 @@ function AuthedApp() {
         pinned={sidebarPinned}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        onTogglePin={() => setSidebarPinned((p) => !p)}
       />
       <div className={`transition-all duration-300 ease-out ${sidebarPinned ? "md:pl-72" : "md:pl-0"}`}>
         <ChatInterface
