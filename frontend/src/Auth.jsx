@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Mail, Lock, Loader2, Eye, EyeOff,
-  MapPin, ShieldCheck, Bot, ArrowRight,
+  ArrowRight, Sun, Moon, MapPin, ShieldCheck, Bot,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+
+// Hot-linked Unsplash photo — stable CDN URL, travel-themed (backpacker
+// overlooking mountains). Used as the left-pane hero for the split layout.
+const HERO_IMAGE =
+  "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1600&q=80";
+
+// Persistence key for the per-user theme toggle on this page.
+const THEME_KEY = "aurago.authTheme";
 
 export default function Auth() {
   const [mode, setMode]         = useState("signin"); // "signin" | "signup"
@@ -14,6 +22,16 @@ export default function Auth() {
   const [busy, setBusy]         = useState(false);
   const [info, setInfo]         = useState(null);
   const [error, setError]       = useState(null);
+  const [remember, setRemember] = useState(true);
+  const [theme, setTheme]       = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) || "dark"; } catch { return "dark"; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
+
+  const isLight = theme === "light";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,260 +62,298 @@ export default function Auth() {
     }
   };
 
-  // Subtle reusable spring for hero + form entrances
-  const spring = { type: "spring", stiffness: 110, damping: 18 };
+  const handleForgot = async () => {
+    if (!email.trim()) {
+      setError("Enter your email first, then tap Forgot password.");
+      return;
+    }
+    setBusy(true); setError(null); setInfo(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      setInfo("Reset link sent to your email — open it and pick a new password.");
+    } catch (e) {
+      setError(e.message ?? "Couldn't send reset email.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Two scoped palettes so the global app stays dark.
+  const P = isLight
+    ? {
+        page:        "bg-slate-50",
+        panel:       "bg-white",
+        text:        "text-slate-900",
+        subtext:     "text-slate-600",
+        muted:       "text-slate-500",
+        border:      "border-slate-200",
+        inputWrap:   "bg-slate-50 border-slate-200 focus-within:border-slate-400",
+        inputText:   "text-slate-900 placeholder:text-slate-400",
+        toggleBtn:   "border-slate-200 bg-white hover:bg-slate-100 text-slate-700",
+        iconMuted:   "text-slate-500",
+        chip:        "border-slate-200 bg-white text-slate-600",
+        switchBtn:   "border-slate-300 text-slate-700 hover:bg-slate-100",
+        dot:         "bg-slate-900",
+      }
+    : {
+        page:        "bg-[var(--bg)]",
+        panel:       "glass-strong",
+        text:        "text-slate-100",
+        subtext:     "text-slate-300",
+        muted:       "text-slate-400",
+        border:      "border-white/[0.08]",
+        inputWrap:   "bg-white/[0.03] border-white/10 focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--ring)]",
+        inputText:   "text-slate-100 placeholder:text-slate-500",
+        toggleBtn:   "border-white/10 bg-white/[0.04] hover:bg-white/[0.08] text-slate-200",
+        iconMuted:   "text-slate-400",
+        chip:        "border-white/[0.08] bg-white/[0.03] text-slate-300",
+        switchBtn:   "border-white/10 text-slate-200 hover:bg-white/[0.08]",
+        dot:         "bg-[var(--accent)]",
+      };
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden text-slate-100">
-      <div className="aurora" />
-      <div className="grain" />
-
-      {/* Floating decorative blobs — pure motion, no images */}
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-32 top-24 h-72 w-72 rounded-full blur-3xl"
-        style={{ background: "var(--accent-soft)" }}
-        animate={{ x: [0, 30, -10, 0], y: [0, -20, 10, 0], opacity: [0.45, 0.7, 0.45] }}
-        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full blur-3xl"
-        style={{ background: "rgba(99,102,241,0.18)" }}
-        animate={{ x: [0, -20, 20, 0], y: [0, 15, -15, 0], opacity: [0.4, 0.65, 0.4] }}
-        transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-6xl flex-col items-center justify-center gap-10 px-4 py-10 lg:flex-row lg:gap-16 lg:py-16">
-        {/* ============= Left: brand + value props ============= */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={spring}
-          className="flex w-full max-w-md flex-col gap-6 text-center lg:text-left"
-        >
-          <motion.div
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ ...spring, delay: 0.05 }}
-            className="flex items-center gap-3 lg:justify-start justify-center"
-          >
-            <motion.div
-              className="accent-bg accent-glow grid h-12 w-12 place-items-center rounded-2xl"
-              whileHover={{ rotate: 12, scale: 1.05 }}
-              transition={{ type: "spring", stiffness: 320, damping: 14 }}
-            >
-              <Sparkles size={22} className="text-slate-900" />
-            </motion.div>
-            <div>
-              <h1 className="serif text-4xl leading-none sm:text-5xl">AuraGo</h1>
-              <p className="text-[12px] uppercase tracking-[0.18em] text-slate-400">
-                AI travel discovery
-              </p>
-            </div>
-          </motion.div>
-
-          {/* Trust pill — gives social proof feel without faking numbers */}
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...spring, delay: 0.1 }}
-            className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[11px] text-slate-300 lg:mx-0"
-          >
-            <span className="accent-text">●</span> Live-verified trips · 30s plan · share with one link
-          </motion.div>
-
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...spring, delay: 0.15 }}
-            className="serif text-2xl leading-snug text-slate-100 sm:text-3xl"
-          >
-            <span className="accent-text">8 hidden-gem destinations</span>, a full plan, and a concierge bot — in 30 seconds.
-          </motion.p>
-
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ ...spring, delay: 0.2 }}
-            className="text-[15px] leading-relaxed text-slate-300"
-          >
-            Tell AuraGo your vibe, budget and travel dates. Get day-by-day itineraries
-            with live weather, route options, hand-picked stays, and direct booking links.
-            <span className="hidden sm:inline"> Works for solo trips on ₹5k or family escapes on ₹5L.</span>
-          </motion.p>
-
-          <motion.ul
-            initial="hidden"
-            animate="show"
-            variants={{
-              hidden: {},
-              show: { transition: { staggerChildren: 0.08, delayChildren: 0.25 } },
-            }}
-            className="mx-auto flex flex-col gap-2.5 text-left text-[14px] sm:gap-3 lg:mx-0"
-          >
-            <Feature Icon={MapPin} title="Mystery deck or direct">
-              Hand AuraGo the wheel for 8 surprise picks, or just say "Goa".
-            </Feature>
-            <Feature Icon={ShieldCheck} title="Live-verified picks">
-              Every plan is fact-checked against the web before you see it.
-            </Feature>
-            <Feature Icon={Bot} title="Concierge that follows up">
-              Ask "best food?", "kid-friendly spots?" — get answers grounded in your trip.
-            </Feature>
-          </motion.ul>
-        </motion.div>
-
-        {/* ============= Right: auth card ============= */}
-        <motion.div
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ ...spring, delay: 0.1 }}
-          className="glass-strong relative w-full max-w-md overflow-hidden rounded-3xl p-6 sm:p-8"
-        >
-          {/* Subtle inner glow shimmer */}
-          <motion.div
+    <div className={`relative min-h-[100dvh] overflow-hidden ${P.page} ${P.text}`}>
+      {/* dark mode keeps the aurora; light mode gets a softer wash */}
+      {isLight ? (
+        <>
+          <div
             aria-hidden="true"
-            className="pointer-events-none absolute -top-12 left-1/2 h-32 w-72 -translate-x-1/2 rounded-full blur-3xl"
-            style={{ background: "var(--accent-soft)" }}
-            animate={{ opacity: [0.45, 0.75, 0.45] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full opacity-40 blur-3xl"
+            style={{ background: "radial-gradient(circle, rgba(99,102,241,0.35), transparent 70%)" }}
           />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full opacity-40 blur-3xl"
+            style={{ background: "radial-gradient(circle, rgba(212,175,55,0.35), transparent 70%)" }}
+          />
+        </>
+      ) : (
+        <>
+          <div className="aurora" />
+          <div className="grain" />
+        </>
+      )}
 
-          <div className="relative mb-5">
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-7xl items-stretch px-3 py-6 sm:px-6 sm:py-10">
+        <div className={`relative grid w-full overflow-hidden rounded-3xl border ${P.border} ${P.panel} shadow-[0_30px_80px_-20px_rgba(0,0,0,0.35)] lg:grid-cols-2`}>
+
+          {/* ============ LEFT: hero image with curved right edge ============ */}
+          <div className="relative hidden min-h-[500px] lg:block">
+            <img
+              src={HERO_IMAGE}
+              alt="A mountain valley at sunrise"
+              className="absolute inset-0 h-full w-full object-cover"
+              style={{ clipPath: "ellipse(112% 100% at 0% 50%)" }}
+              referrerPolicy="no-referrer"
+            />
+            {/* dark overlay so the headline reads clean */}
+            <div
+              className="absolute inset-0"
+              style={{
+                clipPath: "ellipse(112% 100% at 0% 50%)",
+                background: "linear-gradient(135deg, rgba(15,23,42,0.65) 0%, rgba(15,23,42,0.20) 60%, transparent 100%)",
+              }}
+            />
+            {/* brand + tagline overlay */}
+            <div className="absolute inset-0 flex flex-col justify-between p-10">
+              <div className="flex items-center gap-3 text-white">
+                <div className="accent-bg accent-glow grid h-11 w-11 place-items-center rounded-2xl">
+                  <Sparkles size={20} className="text-slate-900" />
+                </div>
+                <div>
+                  <div className="serif text-3xl leading-none">AuraGo</div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-300">AI travel discovery</div>
+                </div>
+              </div>
+
+              <div className="max-w-[420px] text-white">
+                <motion.h2
+                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1, type: "spring", stiffness: 120, damping: 18 }}
+                  className="serif text-4xl leading-tight sm:text-5xl"
+                >
+                  Hidden gems,<br/>not the same five places.
+                </motion.h2>
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.18 }}
+                  className="mt-3 text-[14.5px] leading-relaxed text-slate-200/90"
+                >
+                  Tell AuraGo your budget and vibe. Get 8 cross-checked
+                  destinations, day-by-day plans, real booking links — in 30
+                  seconds.
+                </motion.p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Chip Icon={MapPin}>8 verified picks</Chip>
+                  <Chip Icon={ShieldCheck}>Live-checked plans</Chip>
+                  <Chip Icon={Bot}>Concierge inside</Chip>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ============ RIGHT: form ============ */}
+          <div className="relative flex flex-col p-6 sm:p-10">
+            {/* top bar — signup toggle + theme toggle */}
+            <div className="mb-8 flex items-center justify-between gap-3">
+              <div className={`flex items-center gap-2 text-[13px] ${P.subtext}`}>
+                <span className={P.muted}>
+                  {mode === "signup" ? "Already a planner?" : "New to AuraGo?"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setMode(mode === "signup" ? "signin" : "signup"); setError(null); setInfo(null); }}
+                  className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${P.switchBtn}`}
+                >
+                  {mode === "signup" ? "Sign in" : "Sign up"}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTheme(isLight ? "dark" : "light")}
+                aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+                title={isLight ? "Dark mode" : "Light mode"}
+                className={`grid h-9 w-9 place-items-center rounded-full border transition ${P.toggleBtn}`}
+              >
+                {isLight ? <Moon size={15} /> : <Sun size={15} />}
+              </button>
+            </div>
+
+            {/* heading */}
             <AnimatePresence mode="wait">
-              <motion.h2
+              <motion.div
                 key={mode}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
-                className="serif text-2xl"
               >
-                {mode === "signup" ? "Create your account" : "Welcome back"}
-              </motion.h2>
+                <h1 className="serif text-4xl sm:text-5xl">
+                  {mode === "signup" ? "Create account" : "Welcome back"}
+                </h1>
+                <p className={`mt-2 text-[14px] ${P.subtext}`}>
+                  {mode === "signup"
+                    ? "30 seconds and your first hidden-gem deck is yours."
+                    : "Sign in to pick up your trips, share with friends, and lock plans."}
+                </p>
+              </motion.div>
             </AnimatePresence>
-            <p className="mt-1 text-[13px] text-slate-400">
-              {mode === "signup"
-                ? "Naya account banao — 30 second mein trip plan ready."
-                : "Sign in to plan, save and share your trips."}
+
+            {/* form */}
+            <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+              <Field label="Email" P={P} icon={<Mail size={15} className={P.iconMuted} />}>
+                <input
+                  type="email" required autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className={`flex-1 bg-transparent text-[15px] focus:outline-none ${P.inputText}`}
+                />
+              </Field>
+
+              <Field label="Password" P={P} icon={<Lock size={15} className={P.iconMuted} />}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  required minLength={6}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "signup" ? "min 6 characters" : "your password"}
+                  className={`flex-1 bg-transparent text-[15px] focus:outline-none ${P.inputText}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className={`rounded-md p-1 ${P.iconMuted} hover:opacity-70`}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </Field>
+
+              {mode === "signin" && (
+                <div className="flex items-center justify-between">
+                  <label className={`flex cursor-pointer items-center gap-2 text-[12.5px] ${P.subtext}`}>
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)}
+                      className="accent-[var(--accent)]"
+                    />
+                    Remember me
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleForgot}
+                    className="accent-text text-[12.5px] font-medium hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="rounded-lg border border-red-400/30 bg-red-400/[0.06] p-2 text-xs text-red-500"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+                {info && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="rounded-lg border border-emerald-400/30 bg-emerald-400/[0.08] p-2 text-xs text-emerald-600"
+                  >
+                    {info}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              <motion.button
+                type="submit" disabled={busy}
+                whileHover={!busy ? { scale: 1.01 } : {}}
+                whileTap={!busy ? { scale: 0.98 } : {}}
+                transition={{ type: "spring", stiffness: 420, damping: 20 }}
+                className="accent-bg accent-glow group flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-[15px] font-semibold text-slate-900 disabled:opacity-50"
+              >
+                {busy ? (
+                  <><Loader2 size={15} className="animate-spin" /> Please wait…</>
+                ) : (
+                  <>
+                    {mode === "signup" ? "Create account" : "Sign in"}
+                    <ArrowRight size={15} className="transition group-hover:translate-x-0.5" />
+                  </>
+                )}
+              </motion.button>
+            </form>
+
+            <p className={`mt-auto pt-8 text-center text-[10.5px] ${P.muted}`}>
+              By continuing, you agree to AuraGo's terms & privacy policy.
             </p>
           </div>
-
-          <form onSubmit={handleSubmit} className="relative space-y-3">
-            <Field
-              label="Email"
-              icon={<Mail size={16} className="text-slate-400" />}
-            >
-              <input
-                type="email" required autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="flex-1 bg-transparent text-[15px] focus:outline-none"
-              />
-            </Field>
-
-            <Field
-              label="Password"
-              icon={<Lock size={16} className="text-slate-400" />}
-            >
-              <input
-                type={showPassword ? "text" : "password"}
-                required minLength={6}
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === "signup" ? "min 6 characters" : "your password"}
-                className="flex-1 bg-transparent text-[15px] focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                className="rounded-md p-1 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </Field>
-
-            <AnimatePresence>
-              {error && (
-                <motion.p
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  className="rounded-lg border border-red-400/30 bg-red-400/[0.06] p-2 text-xs text-red-200"
-                >
-                  {error}
-                </motion.p>
-              )}
-              {info && (
-                <motion.p
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  className="rounded-lg border border-emerald-400/30 bg-emerald-400/[0.06] p-2 text-xs text-emerald-200"
-                >
-                  {info}
-                </motion.p>
-              )}
-            </AnimatePresence>
-
-            <motion.button
-              type="submit" disabled={busy}
-              whileHover={!busy ? { scale: 1.01 } : {}}
-              whileTap={!busy ? { scale: 0.98 } : {}}
-              transition={{ type: "spring", stiffness: 420, damping: 20 }}
-              className="accent-bg accent-glow group flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-900 disabled:opacity-50"
-            >
-              {busy ? (
-                <><Loader2 size={14} className="animate-spin" /> Please wait…</>
-              ) : (
-                <>
-                  {mode === "signup" ? "Create account" : "Sign in"}
-                  <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
-                </>
-              )}
-            </motion.button>
-
-            <div className="pt-1 text-center text-xs text-slate-400">
-              {mode === "signup" ? (
-                <>Already have an account?{" "}
-                  <button type="button" onClick={() => { setMode("signin"); setError(null); setInfo(null); }}
-                          className="accent-text font-medium hover:underline">
-                    Sign in
-                  </button>
-                </>
-              ) : (
-                <>New here?{" "}
-                  <button type="button" onClick={() => { setMode("signup"); setError(null); setInfo(null); }}
-                          className="accent-text font-medium hover:underline">
-                    Create account
-                  </button>
-                </>
-              )}
-            </div>
-          </form>
-
-          <p className="mt-5 border-t border-white/[0.06] pt-3 text-center text-[10px] text-slate-500">
-            By continuing, you agree to AuraGo's terms and privacy policy.
-          </p>
-        </motion.div>
+        </div>
       </div>
     </div>
   );
 }
 
-// Reusable labeled input wrapper with focus-ring affordance.
-function Field({ label, icon, children }) {
+function Field({ label, icon, children, P }) {
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-slate-400">
+      <label className={`mb-1.5 block text-[11px] uppercase tracking-wider ${P.muted}`}>
         {label}
       </label>
-      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5 transition focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--ring)]">
+      <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${P.inputWrap}`}>
         {icon}
         {children}
       </div>
@@ -305,23 +361,11 @@ function Field({ label, icon, children }) {
   );
 }
 
-function Feature({ Icon, title, children }) {
+function Chip({ Icon, children }) {
   return (
-    <motion.li
-      variants={{
-        hidden: { opacity: 0, x: -10 },
-        show:   { opacity: 1, x: 0 },
-      }}
-      whileHover={{ x: 2 }}
-      className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5 transition hover:bg-white/[0.04]"
-    >
-      <span className="accent-soft-bg accent-text mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg">
-        <Icon size={13} />
-      </span>
-      <div>
-        <div className="text-[13.5px] font-medium text-slate-100">{title}</div>
-        <div className="text-[12.5px] text-slate-400">{children}</div>
-      </div>
-    </motion.li>
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.12] px-2.5 py-1 text-[11px] text-white/90 backdrop-blur-sm">
+      <Icon size={11} />
+      {children}
+    </span>
   );
 }
