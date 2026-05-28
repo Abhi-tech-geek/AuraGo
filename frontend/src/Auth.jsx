@@ -137,10 +137,54 @@ export default function Auth() {
         </>
       )}
 
-      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-7xl items-stretch px-3 py-6 sm:px-6 sm:py-10">
-        <div className={`relative grid w-full overflow-hidden rounded-3xl border ${P.border} ${P.panel} shadow-[0_30px_80px_-20px_rgba(0,0,0,0.35)] lg:grid-cols-2`}>
+      <div className="relative z-10 mx-auto flex min-h-[100dvh] max-w-7xl items-stretch safe-pt safe-pb px-2 py-3 sm:px-6 sm:py-10">
+        <div className={`relative grid w-full overflow-hidden rounded-2xl border sm:rounded-3xl ${P.border} ${P.panel} shadow-[0_30px_80px_-20px_rgba(0,0,0,0.35)] lg:grid-cols-2`}>
 
-          {/* ============ LEFT: hero image with curved right edge ============ */}
+          {/* ============ MOBILE-ONLY MINI HERO BANNER ============ */}
+          <div className="relative h-[180px] w-full overflow-hidden lg:hidden">
+            <img
+              src={HERO_IMAGE}
+              alt="A mountain valley at sunrise"
+              className="absolute inset-0 h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+            <div
+              className="absolute inset-0"
+              style={{ background: "linear-gradient(180deg, rgba(15,23,42,0.35) 0%, rgba(15,23,42,0.75) 100%)" }}
+            />
+            {/* brand block — small */}
+            <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4 text-white">
+              <div className="flex items-center gap-2">
+                <div className="accent-bg accent-glow grid h-9 w-9 place-items-center rounded-xl">
+                  <Sparkles size={16} className="text-slate-900" />
+                </div>
+                <div>
+                  <div className="serif text-xl leading-none">AuraGo</div>
+                  <div className="text-[10px] uppercase tracking-[0.15em] text-slate-300">AI travel discovery</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTheme(isLight ? "dark" : "light")}
+                aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+                className="grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-sm"
+              >
+                {isLight ? <Moon size={14} /> : <Sun size={14} />}
+              </button>
+            </div>
+            {/* mini tagline at bottom */}
+            <div className="absolute inset-x-0 bottom-0 px-4 pb-3 text-white">
+              <motion.div
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.05, type: "spring", stiffness: 140, damping: 18 }}
+                className="serif text-[20px] leading-tight"
+              >
+                Hidden gems, not the same five places.
+              </motion.div>
+            </div>
+          </div>
+
+          {/* ============ DESKTOP-ONLY LEFT HERO ============ */}
           <div className="relative hidden min-h-[500px] lg:block">
             <img
               src={HERO_IMAGE}
@@ -149,7 +193,6 @@ export default function Auth() {
               style={{ clipPath: "ellipse(112% 100% at 0% 50%)" }}
               referrerPolicy="no-referrer"
             />
-            {/* dark overlay so the headline reads clean */}
             <div
               className="absolute inset-0"
               style={{
@@ -157,7 +200,6 @@ export default function Auth() {
                 background: "linear-gradient(135deg, rgba(15,23,42,0.65) 0%, rgba(15,23,42,0.20) 60%, transparent 100%)",
               }}
             />
-            {/* brand + tagline overlay */}
             <div className="absolute inset-0 flex flex-col justify-between p-10">
               <div className="flex items-center gap-3 text-white">
                 <div className="accent-bg accent-glow grid h-11 w-11 place-items-center rounded-2xl">
@@ -196,11 +238,12 @@ export default function Auth() {
           </div>
 
           {/* ============ RIGHT: form ============ */}
-          <div className="relative flex flex-col p-6 sm:p-10">
-            {/* top bar — signup toggle + theme toggle */}
-            <div className="mb-8 flex items-center justify-between gap-3">
-              <div className={`flex items-center gap-2 text-[13px] ${P.subtext}`}>
-                <span className={P.muted}>
+          <div className="relative flex flex-col p-5 sm:p-10">
+            {/* top bar: on mobile the theme toggle lives in the hero, so we
+                only render the sign-in/up switch here. Desktop shows both. */}
+            <div className="mb-5 flex items-center justify-between gap-2 sm:mb-8">
+              <div className={`flex items-center gap-2 text-[12.5px] sm:text-[13px] ${P.subtext}`}>
+                <span className={`${P.muted} hidden xs:inline sm:inline`}>
                   {mode === "signup" ? "Already a planner?" : "New to AuraGo?"}
                 </span>
                 <button
@@ -211,12 +254,13 @@ export default function Auth() {
                   {mode === "signup" ? "Sign in" : "Sign up"}
                 </button>
               </div>
+              {/* desktop-only theme toggle (mobile one lives in the hero) */}
               <button
                 type="button"
                 onClick={() => setTheme(isLight ? "dark" : "light")}
                 aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
                 title={isLight ? "Dark mode" : "Light mode"}
-                className={`grid h-9 w-9 place-items-center rounded-full border transition ${P.toggleBtn}`}
+                className={`hidden h-9 w-9 place-items-center rounded-full border transition lg:grid ${P.toggleBtn}`}
               >
                 {isLight ? <Moon size={15} /> : <Sun size={15} />}
               </button>
@@ -231,10 +275,10 @@ export default function Auth() {
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.18 }}
               >
-                <h1 className="serif text-4xl sm:text-5xl">
+                <h1 className="serif text-3xl leading-tight sm:text-5xl">
                   {mode === "signup" ? "Create account" : "Welcome back"}
                 </h1>
-                <p className={`mt-2 text-[14px] ${P.subtext}`}>
+                <p className={`mt-2 text-[13px] sm:text-[14px] ${P.subtext}`}>
                   {mode === "signup"
                     ? "30 seconds and your first hidden-gem deck is yours."
                     : "Sign in to pick up your trips, share with friends, and lock plans."}
@@ -243,7 +287,7 @@ export default function Auth() {
             </AnimatePresence>
 
             {/* form */}
-            <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+            <form onSubmit={handleSubmit} className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-4">
               <Field label="Email" P={P} icon={<Mail size={15} className={P.iconMuted} />}>
                 <input
                   type="email" required autoComplete="email"
@@ -337,7 +381,7 @@ export default function Auth() {
               </motion.button>
             </form>
 
-            <p className={`mt-auto pt-8 text-center text-[10.5px] ${P.muted}`}>
+            <p className={`mt-6 pt-4 text-center text-[10.5px] sm:mt-auto sm:pt-8 ${P.muted}`}>
               By continuing, you agree to AuraGo's terms & privacy policy.
             </p>
           </div>
