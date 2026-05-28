@@ -859,7 +859,7 @@ function Welcome({ loadError, prefs, composerMode, onOpenModal, onPickDestinatio
         {/* Surprise-mode tip — small hint instead of chips */}
         {!isDirect && (
           <p className="mt-4 text-xs text-slate-400">
-            Try: <em>"Plan a budget trip for 2 from Bangalore"</em> · <em>"Elite honeymoon under ₹2L"</em>
+            Try: <em>"Weekend escape from Mumbai under ₹15k"</em> · <em>"Offbeat 5-day trip in the Northeast"</em>
           </p>
         )}
 
