@@ -613,23 +613,33 @@ export default function ChatInterface({
         currentUserId={currentUser.id}
       />
 
-      {/* Floating "trip chat" toggle — only meaningful once a session has
-          members. Always visible so the host can open it before others join. */}
-      <motion.button
-        onClick={() => setChatOpen(true)}
-        whileHover={{ scale: 1.06 }}
-        whileTap={{ scale: 0.94 }}
-        className="glass fixed bottom-24 right-4 z-30 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:bottom-28 sm:right-6"
-        title="Trip chat"
-        aria-label="Open trip chat"
-      >
-        <MessageSquare size={18} className="accent-text" />
-        {messages.filter((m) => m.kind === "chat").length > 0 && (
-          <span className="accent-bg absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold text-slate-900">
-            {messages.filter((m) => m.kind === "chat").length}
-          </span>
+      {/* Floating "trip chat" toggle — only useful once there's an actual
+          plan to discuss. Hidden on the empty welcome state so the screen
+          doesn't show buttons that have nothing to attach to. */}
+      <AnimatePresence>
+        {messages.some((m) => m.kind === "itinerary" || m.kind === "lock_event") && (
+          <motion.button
+            key="chat-fab"
+            initial={{ opacity: 0, scale: 0.5, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.5, y: 20 }}
+            transition={{ type: "spring", stiffness: 360, damping: 22 }}
+            onClick={() => setChatOpen(true)}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.94 }}
+            className="glass fixed bottom-24 right-4 z-30 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:bottom-28 sm:right-6"
+            title="Trip chat"
+            aria-label="Open trip chat"
+          >
+            <MessageSquare size={18} className="accent-text" />
+            {messages.filter((m) => m.kind === "chat").length > 0 && (
+              <span className="accent-bg absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold text-slate-900">
+                {messages.filter((m) => m.kind === "chat").length}
+              </span>
+            )}
+          </motion.button>
         )}
-      </motion.button>
+      </AnimatePresence>
     </div>
   );
 }
