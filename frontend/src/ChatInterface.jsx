@@ -448,7 +448,14 @@ export default function ChatInterface({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         className="relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8"
-        style={{ paddingBottom: "calc(10rem + env(safe-area-inset-bottom))" }}
+        style={{
+          // Reserve room for the fixed footer composer; collapse that space
+          // back when there's no composer so the welcome doesn't sit weirdly
+          // high on screen.
+          paddingBottom: messages.length > 0
+            ? "calc(10rem + env(safe-area-inset-bottom))"
+            : "calc(2rem + env(safe-area-inset-bottom))",
+        }}
       >
         <LayoutGroup>
           <div className="flex flex-col gap-5">
@@ -517,7 +524,11 @@ export default function ChatInterface({
         </LayoutGroup>
       </motion.main>
 
-      {/* ================= COMPOSER ================= */}
+      {/* ================= COMPOSER =================
+          Hidden on the empty welcome state so "Start a trip" is the sole
+          entry point. Reveals once the session has any message (after the
+          first deck is generated). */}
+      {messages.length > 0 && (
       <footer
         className={`safe-bottom-pad safe-px fixed bottom-0 right-0 z-20 px-3 pt-2 transition-[left] duration-300 ease-out sm:px-8 ${sidebarPinned ? "left-0 md:left-72" : "left-0"}`}
         style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
@@ -592,6 +603,7 @@ export default function ChatInterface({
         </div>
         <ComposerTagline />
       </footer>
+      )}
 
       <BudgetModal
         open={modalOpen}
