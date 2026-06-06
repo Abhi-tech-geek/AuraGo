@@ -129,6 +129,7 @@ Rules:
     mode:             intent.mode             ?? sessionDefaults.mode,
     budget_inr:       intent.budget_inr       ?? sessionDefaults.budget_inr,
     party_size:       intent.party_size       ?? sessionDefaults.party_size ?? 2,
+    days:             sessionDefaults.days    ?? 4,
     universal_access: intent.universal_access ?? sessionDefaults.universal_access ?? false,
     country:          sessionDefaults.country ?? "India",
     has_passport:     sessionDefaults.has_passport ?? false,
@@ -201,12 +202,16 @@ for SE Asia avoid Bali / Phuket). Suggest places a well-travelled
 friend would recommend over a guidebook — small towns, off-season
 spots, second cities, untouched coastlines, regional cultural pockets.
 
-BUDGET REALISM:
+BUDGET REALISM — VERY IMPORTANT:
 Total budget is ₹${intent.budget_inr} for ${intent.party_size} ${intent.party_size === 1 ? "person" : "people"} over ${intent.days ?? 4} days.
-Every destination's est_cost_inr MUST be achievable inside this budget
-(stay + food + local transport for the whole party, excluding flights).
-Never suggest a place that obviously requires more money — the user feels
-let down.
+This budget covers EVERYTHING the user pays for the trip: round-trip
+transport from their starting city + stays + food + activities + buffer.
+"est_cost_inr" you return = stay + food + activities ONLY (NOT transport),
+and it MUST be small enough that the user's transport from their origin
+also fits inside the total budget. Roughly: for nearby destinations leave
+≥ 25% of total for transport; for far/international leave ≥ 45%.
+Never suggest a place that obviously can't be done inside the total — the
+user feels let down. Prefer destinations where the maths comfortably works.
 
 ${scopeBrief(country, hasPassport, intlOK)}
 
@@ -350,6 +355,8 @@ export async function chatTurn(req, res) {
         mode:             bodyIntent.mode             ?? session.mode             ?? "elite",
         budget_inr:       bodyIntent.budget_inr       ?? session.budget_inr,
         party_size:       bodyIntent.party_size       ?? session.party_size       ?? 2,
+        days:             bodyIntent.days             ?? session.days             ?? 4,
+        origin:           bodyIntent.origin           ?? session.origin           ?? "",
         universal_access: bodyIntent.universal_access ?? session.universal_access ?? false,
         country:          bodyIntent.country          ?? session.country          ?? "India",
         has_passport:     bodyIntent.has_passport     ?? session.has_passport     ?? false,
@@ -357,12 +364,14 @@ export async function chatTurn(req, res) {
       };
     } else {
       intent = await parseIntent(prompt, session);
+      intent.origin = bodyIntent?.origin ?? session.origin ?? "";
     }
 
     await supabase.from("sessions").update({
       mode: intent.mode,
       budget_inr: intent.budget_inr ?? session.budget_inr,
       party_size: intent.party_size,
+      days: intent.days,
       universal_access: intent.universal_access,
       country: intent.country,
       has_passport: intent.has_passport,
@@ -457,12 +466,34 @@ ${routeStops.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}
 - "estimated_cost_inr" covers the WHOLE multi-stop trip.
 ` : "";
 
+  const numDays = Math.max(1, Math.min(30, Number(intent.days) || 4));
   const daySys = `Build a detailed travel itinerary as JSON.
 ${multiStopRules}
+
+DAY COUNT — STRICT:
+The user explicitly chose ${numDays} day${numDays === 1 ? "" : "s"}.
+The "days" array MUST contain EXACTLY ${numDays} entries — no more, no
+less, regardless of what feels natural. Day numbers must run from 1 to
+${numDays} inclusive.
+
+BUDGET INTERPRETATION:
+The user's total budget of ₹${intent.budget_inr} is for the WHOLE trip
+including transport from their origin. "estimated_cost_inr" you return
+is stay + food + activities ONLY (NOT transport). Pick stays and
+activities priced so that estimated_cost_inr + a realistic round-trip
+transport from origin still fits inside the total budget.
+
+DISTANCE — REQUIRED:
+Also return "est_distance_km": your honest estimate of the one-way road
+distance from "${intent.origin || "the user's origin"}" to "${destination}"
+in kilometres. Use real-world geography, not guesses (Vrindavan from
+Delhi is ~150 km; Goa from Bangalore is ~560 km; etc.).
+
 Return JSON only:
 {
  "days": [{"day":1,"title":"...","activities":["...","..."]}],
  "estimated_cost_inr": <int>,
+ "est_distance_km": <int>,
  "weather": {
    "summary": "<one short line, e.g. 'Pleasant 12-22°C, occasional rain'>",
    "temp_c": "<e.g. '12-22°C' or 'around 30°C'>",
@@ -519,10 +550,12 @@ Rules:
     : "";
 
   const dayUser = `Destination: ${destination} (${vibe})
+Origin: ${intent.origin || "(not given)"}
 ${routeLine}
 ${travelDateLine}
+Days: ${numDays} (MUST match exactly)
 Party size: ${intent.party_size}${intent.party_size === 1 ? " (solo traveller)" : ""}
-Budget (whole party): ₹${intent.budget_inr}
+Total budget (whole party, all-in incl. transport): ₹${intent.budget_inr}
 ${intent.universal_access ? "MUST be wheelchair-friendly. Suggest specific gates, ramps, and lower-crowd entry points." : ""}
 ${passportLine}
 Verified context: ${fresh._summary}
@@ -548,12 +581,31 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
   }
   const photoList = photos.status === "fulfilled" ? photos.value : [];
 
+  // Hard-enforce the day count. Trim if LLM overshot; pad with a generic
+  // closing day if it undershot. The user picked a number — we honour it.
+  let dayPlan = Array.isArray(plan.days) ? plan.days.slice(0, numDays) : [];
+  while (dayPlan.length < numDays) {
+    const d = dayPlan.length + 1;
+    dayPlan.push({
+      day: d,
+      title: d === numDays ? "Wind down & head back" : `Day ${d} — flexible exploration`,
+      activities: [
+        "Slow breakfast at a local café",
+        "Free time to revisit a favourite spot",
+        "Easy evening, early dinner",
+      ],
+    });
+  }
+  // Make sure day numbers are 1..N regardless of what the LLM returned.
+  dayPlan = dayPlan.map((d, i) => ({ ...d, day: i + 1 }));
+
   return {
     card_id,
     destination,
     vibe,
-    days: plan.days ?? [],
+    days: dayPlan,
     estimated_cost_inr: plan.estimated_cost_inr ?? est_cost_inr,
+    est_distance_km: Number(plan.est_distance_km) > 0 ? Math.round(Number(plan.est_distance_km)) : null,
     rag_verified: true,
     rag_summary: fresh._summary,
     hazard: fresh._verdict === "hazard" ? fresh._reason : null,
@@ -598,6 +650,8 @@ export async function expandCard(req, res) {
     const intent = {
       mode: session.mode, budget_inr: session.budget_inr,
       party_size: session.party_size,
+      days: session.days ?? 4,
+      origin: session.origin ?? "",
       universal_access: session.universal_access,
       country: session.country ?? "India",
       has_passport: session.has_passport ?? false,
@@ -662,6 +716,8 @@ export async function directTrip(req, res) {
       mode:             bodyIntent?.mode             ?? session.mode             ?? "elite",
       budget_inr:       bodyIntent?.budget_inr       ?? session.budget_inr       ?? 50000,
       party_size:       bodyIntent?.party_size       ?? session.party_size       ?? 2,
+      days:             bodyIntent?.days             ?? session.days             ?? 4,
+      origin:           bodyIntent?.origin           ?? session.origin           ?? "",
       universal_access: bodyIntent?.universal_access ?? session.universal_access ?? false,
       country:          bodyIntent?.country          ?? session.country          ?? "India",
       has_passport:     bodyIntent?.has_passport     ?? session.has_passport     ?? false,
@@ -676,6 +732,7 @@ export async function directTrip(req, res) {
         mode: intent.mode,
         budget_inr: intent.budget_inr,
         party_size: intent.party_size,
+        days: intent.days,
         universal_access: intent.universal_access,
         country: intent.country,
         has_passport: intent.has_passport,

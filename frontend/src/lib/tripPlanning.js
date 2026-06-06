@@ -2,30 +2,78 @@
 // Routes, budget breakdown, and distances are computed locally so the
 // existing backend (which only returns destination + cost) can stay simple.
 
+// Static fallback distances from Delhi for popular Indian destinations.
+// We use this only when the backend itinerary payload didn't carry an
+// est_distance_km (older flows, multi-stop routes, etc.). The match is
+// case-insensitive and uses substring inclusion so "Vrindavan, India"
+// still resolves to the "Vrindavan" entry.
 export const KNOWN_DESTINATIONS = {
-  "Udaipur":    { km: 670,  emoji: "👑", roadVia: "NH48 (Jaipur)" },
-  "Puducherry": { km: 2200, emoji: "🌊", roadVia: "too far for road" },
-  "Manali":     { km: 540,  emoji: "🏔️", roadVia: "NH3 (Chandigarh, Kullu)" },
-  "Amritsar":   { km: 450,  emoji: "🕌", roadVia: "NH44 (Ambala)" },
-  "Coorg":      { km: 2200, emoji: "☕", roadVia: "too far for road" },
-  "Goa":        { km: 1900, emoji: "🏖️", roadVia: "too far for road" },
-  "Jaipur":     { km: 280,  emoji: "🏰", roadVia: "NH48" },
-  "Rishikesh":  { km: 240,  emoji: "🧘", roadVia: "NH334" },
-  "Ladakh":     { km: 1010, emoji: "🏔️", roadVia: "Manali-Leh highway" },
-  "Kerala":     { km: 2700, emoji: "🌴", roadVia: "too far for road" },
-  "Darjeeling": { km: 1500, emoji: "🍃", roadVia: "too far for road" },
-  "Shillong":   { km: 1900, emoji: "🌧️", roadVia: "too far for road" },
+  // Around Delhi NCR / pilgrim circuit
+  "Vrindavan":  { km: 150,  roadVia: "NH19 (Mathura)" },
+  "Mathura":    { km: 145,  roadVia: "NH19" },
+  "Agra":       { km: 230,  roadVia: "Yamuna Expressway" },
+  "Jaipur":     { km: 280,  roadVia: "NH48" },
+  "Rishikesh":  { km: 240,  roadVia: "NH334" },
+  "Haridwar":   { km: 215,  roadVia: "NH334" },
+  "Pushkar":    { km: 410,  roadVia: "NH48 (Ajmer)" },
+  "Nainital":   { km: 305,  roadVia: "NH109" },
+  "Mussoorie":  { km: 290,  roadVia: "via Dehradun" },
+  "Shimla":     { km: 350,  roadVia: "NH5 (Chandigarh)" },
+  "Manali":     { km: 540,  roadVia: "NH3 (Chandigarh, Kullu)" },
+  "Amritsar":   { km: 450,  roadVia: "NH44 (Ambala)" },
+  "Dharamshala":{ km: 475,  roadVia: "NH154" },
+  "Khajuraho":  { km: 620,  roadVia: "via Jhansi" },
+  "Varanasi":   { km: 820,  roadVia: "NH19 / NH35" },
+  "Udaipur":    { km: 670,  roadVia: "NH48 (Jaipur)" },
+  "Jaisalmer":  { km: 800,  roadVia: "via Jodhpur" },
+  "Spiti":      { km: 720,  roadVia: "Manali-Spiti highway" },
+  "Ziro":       { km: 2400, roadVia: "too far for road" },
+  "Tawang":     { km: 2300, roadVia: "too far for road" },
+  // Long-haul destinations from Delhi
+  "Puducherry": { km: 2200, roadVia: "too far for road" },
+  "Coorg":      { km: 2200, roadVia: "too far for road" },
+  "Goa":        { km: 1900, roadVia: "too far for road" },
+  "Hampi":      { km: 1900, roadVia: "too far for road" },
+  "Gokarna":    { km: 2000, roadVia: "too far for road" },
+  "Ladakh":     { km: 1010, roadVia: "Manali-Leh highway" },
+  "Kerala":     { km: 2700, roadVia: "too far for road" },
+  "Munnar":     { km: 2600, roadVia: "too far for road" },
+  "Darjeeling": { km: 1500, roadVia: "too far for road" },
+  "Shillong":   { km: 1900, roadVia: "too far for road" },
+  "Sikkim":     { km: 1700, roadVia: "too far for road" },
+  "Tirupati":   { km: 2000, roadVia: "too far for road" },
+  "Hyderabad":  { km: 1550, roadVia: "too far for road" },
+  "Bangalore":  { km: 2100, roadVia: "too far for road" },
+  "Chennai":    { km: 2200, roadVia: "too far for road" },
+  "Mumbai":     { km: 1400, roadVia: "NH48" },
+  "Pune":       { km: 1450, roadVia: "NH48" },
+  "Kolkata":    { km: 1500, roadVia: "NH19" },
+  "Lucknow":    { km: 555,  roadVia: "NH9" },
+  "Bhopal":     { km: 780,  roadVia: "NH44" },
 };
 
-export function distanceFromOrigin(_origin, destination) {
-  const known = KNOWN_DESTINATIONS[destination];
+function lookupKnown(destination) {
+  if (!destination) return null;
+  const norm = String(destination).toLowerCase();
+  for (const key of Object.keys(KNOWN_DESTINATIONS)) {
+    if (norm.includes(key.toLowerCase())) return KNOWN_DESTINATIONS[key];
+  }
+  return null;
+}
+
+// `payloadKm` lets the caller pass the backend's est_distance_km estimate,
+// which is the most accurate option when available — the static map is
+// only a fallback for older trips and for safe defaults.
+export function distanceFromOrigin(_origin, destination, payloadKm = null) {
+  if (Number(payloadKm) > 0) return Math.round(Number(payloadKm));
+  const known = lookupKnown(destination);
   if (known) return known.km;
-  // Reasonable fallback for unknown destinations
+  // Conservative fallback when the destination is truly unknown.
   return 800;
 }
 
 export function roadViaLabel(destination) {
-  return KNOWN_DESTINATIONS[destination]?.roadVia ?? "scenic route";
+  return lookupKnown(destination)?.roadVia ?? "scenic route";
 }
 
 // =====================================================================
@@ -78,8 +126,8 @@ export function computeBudgetBreakdown(destinationCost, mode, transportCost = nu
 // =====================================================================
 // Route options — flight / train / road
 // =====================================================================
-export function computeRoutes({ origin, destination, mode, totalBudget, partySize }) {
-  const km = distanceFromOrigin(origin, destination);
+export function computeRoutes({ origin, destination, mode, totalBudget, partySize, payloadKm }) {
+  const km = distanceFromOrigin(origin, destination, payloadKm);
   const elite = mode === "elite";
 
   const flightOk  = km > 400;

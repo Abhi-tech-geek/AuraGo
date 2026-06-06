@@ -275,6 +275,8 @@ export default function ChatInterface({
             mode: effective.mode,
             budget_inr: effective.budget_inr,
             party_size: effective.party_size,
+            days: effective.days,
+            origin: effective.origin,
             universal_access: effective.universal_access,
             country: effective.country,
             has_passport: effective.has_passport,
@@ -341,6 +343,8 @@ export default function ChatInterface({
         mode: next.mode,
         budget_inr: next.budget_inr,
         party_size: next.party_size,
+        days: next.days,
+        origin: next.origin,
         universal_access: next.universal_access,
         country: next.country,
         has_passport: next.has_passport,
@@ -607,9 +611,9 @@ export default function ChatInterface({
         currentUserId={currentUser.id}
       />
 
-      {/* Floating "trip chat" toggle — only useful once there's an actual
-          plan to discuss. Hidden on the empty welcome state so the screen
-          doesn't show buttons that have nothing to attach to. */}
+      {/* Floating "trip chat" toggle — sits ABOVE the concierge bubble
+          with a deliberate gap so the two never overlap on small screens.
+          Hidden until there's an itinerary so the welcome stays clean. */}
       <AnimatePresence>
         {messages.some((m) => m.kind === "itinerary" || m.kind === "lock_event") && (
           <motion.button
@@ -621,7 +625,11 @@ export default function ChatInterface({
             onClick={() => setChatOpen(true)}
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.94 }}
-            className="glass fixed bottom-24 right-4 z-30 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:bottom-28 sm:right-6"
+            // Stack: concierge sits at bottom-6.5rem; we add 4.25rem so this
+            // button sits above it with a small gap. Right edge aligns with
+            // both buttons.
+            style={{ bottom: "calc(10.75rem + env(safe-area-inset-bottom))" }}
+            className="glass fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:right-6"
             title="Trip chat"
             aria-label="Open trip chat"
           >
@@ -1171,8 +1179,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       mode: prefs.mode,
       totalBudget: prefs.budget_inr,
       partySize: prefs.party_size,
+      payloadKm: p.est_distance_km,
     }),
-    [prefs.origin, p.destination, prefs.mode, prefs.budget_inr, prefs.party_size]
+    [prefs.origin, p.destination, prefs.mode, prefs.budget_inr, prefs.party_size, p.est_distance_km]
   );
 
   const recommendedIdx = Math.max(0, routeOpts.findIndex((r) => r.recommended));
@@ -1614,20 +1623,22 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
                       finally { setRefining(false); }
                     }}
                     disabled={refining || locked}
-                    className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08] disabled:opacity-50"
-                    title={locked ? "Locked — unlock to change" : "Generate different activities for this day"}
+                    className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-[10px] text-slate-300 hover:bg-white/[0.08] disabled:opacity-50 sm:px-2 sm:py-0.5"
+                    title={locked ? "Locked — unlock to change" : "Shuffle this day's activities"}
+                    aria-label="Shuffle activities"
                   >
-                    <RefreshCw size={10} className={`accent-text ${refining ? "animate-spin" : ""}`} />
-                    Shuffle
+                    <RefreshCw size={12} className={`accent-text ${refining ? "animate-spin" : ""}`} />
+                    <span className="hidden sm:inline">Shuffle</span>
                   </button>
                   {dayRouteUrl && (
                     <a
                       href={dayRouteUrl} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300 hover:bg-white/[0.08]"
-                      title="Open this day's stops as a Google Maps route"
+                      className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-[10px] text-slate-300 hover:bg-white/[0.08] sm:px-2 sm:py-0.5"
+                      title="Open as Google Maps route"
+                      aria-label="Day route"
                     >
-                      <MapIcon size={10} className="accent-text" />
-                      Map
+                      <MapIcon size={12} className="accent-text" />
+                      <span className="hidden sm:inline">Map</span>
                     </a>
                   )}
                 </div>
@@ -1639,11 +1650,11 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
                   const q = encodeURIComponent(`${a} ${p.destination ?? ""}`.trim());
                   return (
                     <li key={i} className="flex gap-2">
-                      <span className="accent-text">•</span>
+                      <span className="accent-text shrink-0">•</span>
                       <a
                         href={`https://www.google.com/maps/search/?api=1&query=${q}`}
                         target="_blank" rel="noreferrer"
-                        className="hover:accent-text hover:underline decoration-dotted underline-offset-2"
+                        className="min-w-0 break-words hover:accent-text hover:underline decoration-dotted underline-offset-2"
                         title="Find on Google Maps"
                       >{a}</a>
                     </li>
