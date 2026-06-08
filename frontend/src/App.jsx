@@ -75,18 +75,52 @@ function loadSidebarPinned() {
   } catch { return true; }
 }
 
+// Theme persistence — light / dark per user, with OS prefers-color-scheme
+// as the first-visit fallback. Applied to body so all CSS vars cascade.
+const THEME_KEY = "aurago.theme";
+function loadStoredTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {}
+  try {
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
 function AuthedApp() {
   const [authSession, setAuthSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [sessions, setSessions]       = useState([]);
   const [activeId, setActiveId]       = useState(null);
   const [prefs, setPrefs]             = useState(loadStoredPrefs);
+  const [theme, setTheme]             = useState(loadStoredTheme);
   const [bootError, setBootError]     = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPinned);
   const [compareOpen, setCompareOpen] = useState(false);
   // Captured once at mount so Auth flow doesn't lose it on redirects.
   const [pendingInviteId] = useState(() => inviteSessionIdFromUrl());
+
+  // Apply theme + mode body classes — drives every CSS variable in index.css.
+  useEffect(() => {
+    const b = document.body;
+    b.classList.remove("theme-light", "theme-dark");
+    b.classList.add(`theme-${theme}`);
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
+
+  useEffect(() => {
+    const b = document.body;
+    b.classList.remove("sasta", "mode-sasta", "mode-elite");
+    if (prefs.mode === "sasta") {
+      b.classList.add("sasta", "mode-sasta");
+    } else {
+      b.classList.add("mode-elite");
+    }
+  }, [prefs.mode]);
 
   // Persist desktop pin state
   useEffect(() => {
@@ -328,6 +362,8 @@ function AuthedApp() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onTogglePin={() => setSidebarPinned((p) => !p)}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => t === "light" ? "dark" : "light")}
       />
       <div className={`transition-all duration-300 ease-out ${sidebarPinned ? "md:pl-72" : "md:pl-0"}`}>
         <ChatInterface

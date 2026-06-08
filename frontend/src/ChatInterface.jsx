@@ -16,6 +16,7 @@ import {
   Mountain, Waves, TreePine, Droplets, Castle, Church, PawPrint, Compass,
   UserPlus, Users, ExternalLink, Map as MapIcon,
   Wand2, CloudDrizzle, BarChart3, MessageSquare, Tag, RefreshCw, Trash2,
+  ArrowRight,
 } from "lucide-react";
 
 // Auth helper used by the new endpoints — pulls the bearer once.
@@ -56,6 +57,7 @@ import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";
 import { citiesFor } from "./lib/cities";
+import { PLACE_TEASERS, VIBE_TEASERS } from "./lib/teasers";
 import {
   computeRoutes, computeBudgetBreakdown, fmtINR, promptFromPrefs,
   KNOWN_DESTINATIONS,
@@ -454,13 +456,11 @@ export default function ChatInterface({
               <Welcome
                 loadError={loadError}
                 prefs={prefs}
+                currentUser={currentUser}
                 composerMode={composerMode}
                 onOpenModal={() => setModalOpen(true)}
                 onPickDestination={(name) => { setPendingDestination(name); setModalOpen(true); }}
-                onStarter={(overrides) => {
-                  onPrefsChange?.({ ...prefs, ...overrides });
-                  setModalOpen(true);
-                }}
+                onChipFill={(text) => setInput(text)}
               />
             )}
             <AnimatePresence initial={false}>
@@ -738,152 +738,101 @@ function ComposerModeBtn({ active, onClick, icon, label }) {
   );
 }
 
-function Welcome({ loadError, prefs, composerMode, onOpenModal, onPickDestination, onStarter }) {
-  const isDirect = composerMode === "direct";
+function Welcome({ loadError, prefs, currentUser, composerMode, onOpenModal, onPickDestination, onChipFill }) {
+  const surprise = composerMode !== "direct";
 
-  // Quick-pick destinations swap based on whether the user has a passport.
-  // We bias toward hidden-gem-ish names rather than the obvious touristy
-  // ones — matches what the candidate-pool prompt already does.
-  const country = prefs?.country ?? "India";
-  const hasPassport = !!prefs?.has_passport;
-  const POOLS = {
-    India: ["Spiti Valley", "Hampi", "Ziro", "Chettinad", "Tawang", "Gokarna", "Khajuraho", "Munsiyari"],
-    "United States": ["Asheville", "Sedona", "Marfa", "Bar Harbor", "Taos", "Savannah", "Olympic NP", "Joshua Tree"],
-    "United Kingdom": ["Isle of Skye", "Cotswolds", "Bath", "Snowdonia", "St Ives", "Durham", "Yorkshire Dales", "Pembrokeshire"],
-    Australia: ["Margaret River", "Kangaroo Island", "Byron Bay", "Tasmania", "Coral Bay", "Lord Howe", "Daintree", "Esperance"],
-    UAE: ["Hatta", "Liwa Desert", "Khor Fakkan", "Al Ain", "Ras Al Khaimah", "Dibba", "Sir Bani Yas", "Fujairah"],
-    Singapore: ["Sentosa", "Pulau Ubin", "Kampong Glam", "Tiong Bahru", "Southern Ridges", "Coney Island", "Lazarus Island", "St John's Island"],
-    Canada: ["Tofino", "Banff", "Gros Morne", "Haida Gwaii", "Saguenay", "Cape Breton", "Yukon", "Drumheller"],
-    Germany: ["Saxon Switzerland", "Rügen", "Bamberg", "Quedlinburg", "Sylt", "Görlitz", "Spreewald", "Tübingen"],
-    Japan: ["Naoshima", "Tohoku", "Yakushima", "Iya Valley", "Onomichi", "Tsumago", "Shimokita", "Ishigaki"],
-    Thailand: ["Pai", "Chiang Rai", "Sukhothai", "Koh Kood", "Trang", "Mae Hong Son", "Nan", "Loei"],
-    Indonesia: ["Flores", "Tana Toraja", "Belitung", "Sumba", "Banyuwangi", "Raja Ampat", "Derawan", "Kalimantan"],
-  };
-  const intlPool = ["Georgia", "Sri Lanka", "Vietnam", "Portugal", "Slovenia", "Jordan"];
-  const local = POOLS[country] ?? POOLS.India;
-  const picks = hasPassport ? [...local.slice(0, 5), ...intlPool.slice(0, 3)] : local.slice(0, 8);
+  // Greeting tuned to local time of day.
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const name = (currentUser?.email?.split("@")[0]) || "traveller";
 
-  // Theme starters — one-tap presets that pre-fill the modal.
-  const starters = [
-    { label: "Weekend escape", emoji: "🏖️", desc: "≈ ₹15k · 3 days", overrides: { mode: "sasta", budget_inr: 15000, days: 3, party_size: 2 } },
-    { label: "Solo backpacker", emoji: "🎒", desc: "≈ ₹10k · 5 days", overrides: { mode: "sasta", budget_inr: 10000, days: 5, party_size: 1 } },
-  ];
+  // We render the rail twice (the marquee uses translateX(-50%) for a
+  // seamless infinite loop), but only the first half is interactive.
+  const placeRail = [...PLACE_TEASERS, ...PLACE_TEASERS];
+  const vibeRail  = [...VIBE_TEASERS, ...VIBE_TEASERS];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 16, scale: 0.985 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="glass relative mt-4 overflow-hidden rounded-2xl p-5 sm:mt-8 sm:p-7"
-    >
-      {/* drifting accent blobs */}
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full blur-3xl"
-        style={{ background: "var(--accent-soft)" }}
-        animate={{ x: [0, 30, 0], y: [0, 14, 0], opacity: [0.55, 0.85, 0.55] }}
-        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full blur-3xl"
-        style={{ background: "rgba(99,102,241,0.18)" }}
-        animate={{ x: [0, -20, 0], y: [0, -10, 0], opacity: [0.4, 0.65, 0.4] }}
-        transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      <div className="relative">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-          <Sparkles size={10} className="accent-text" />
-          AuraGo
+    <div className="home fade">
+      {/* HERO */}
+      <div className="home-hero">
+        <div className="home-greet mono">
+          <span className="home-live" /> {greet.toUpperCase()}, {name.toUpperCase()}
         </div>
-        <motion.h1
-          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05, duration: 0.5 }}
-          className="serif mb-2 text-3xl leading-tight sm:text-4xl"
-        >
-          {isDirect ? "Where to next?" : "Let AuraGo surprise you."}
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12, duration: 0.45 }}
-          className="text-[14.5px] leading-relaxed text-slate-300"
-        >
-          {isDirect
-            ? "Pick a hidden gem below, choose a starter preset, or type the place you already have in mind. I'll plan that exact trip and suggest similar nearby spots in case your mood changes."
-            : "Tell me your vibe in the box at the bottom — budget, days, who's coming. I'll come back with 8 cross-checked options you've probably never heard of."}
-        </motion.p>
-
-        {/* Chips + starters live ONLY in "I know where" mode — surprise
-            mode is intentionally clean so the user goes straight to the
-            composer textarea. */}
-        {isDirect && (
-          <>
-            <div className="mt-5">
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-                <MapPin size={10} className="accent-text" /> Hidden gems · {country}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {picks.map((name, i) => (
-                  <motion.button
-                    key={name}
-                    onClick={() => onPickDestination?.(name)}
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.18 + i * 0.04, duration: 0.35 }}
-                    whileHover={{ y: -2, scale: 1.04 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12.5px] text-slate-200 hover:border-white/20 hover:bg-white/[0.06]"
-                  >
-                    {name}
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-                <Sparkles size={10} className="accent-text" /> Quick starters
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {starters.map((s, i) => (
-                  <motion.button
-                    key={s.label}
-                    onClick={() => onStarter?.(s.overrides)}
-                    initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.35 + i * 0.06 }}
-                    whileHover={{ y: -3 }}
-                    className="group relative overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025] p-3 text-left transition hover:border-white/20 hover:bg-white/[0.05]"
-                  >
-                    <div className="mb-1 text-2xl">{s.emoji}</div>
-                    <div className="text-[13.5px] font-medium text-slate-100">{s.label}</div>
-                    <div className="text-[11.5px] text-slate-400">{s.desc}</div>
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Surprise-mode tip — small hint instead of chips */}
-        {!isDirect && (
-          <p className="mt-4 text-xs text-slate-400">
-            Try: <em>"Weekend escape from Mumbai under ₹15k"</em> · <em>"Offbeat 5-day trip in the Northeast"</em>
-          </p>
-        )}
-
-        {loadError && (
-          <p className="mt-4 text-[12.5px] text-amber-200">{loadError}</p>
-        )}
-
-        <motion.button
-          onClick={onOpenModal}
-          whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-          className="accent-bg accent-glow mt-5 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900"
-        >
-          Start a trip →
-        </motion.button>
+        <h1 className="home-h">
+          Go where the<br />
+          <span className="serif-i accent">crowd isn't.</span>
+        </h1>
+        <p className="home-sub">
+          {surprise
+            ? "Describe a vibe and a budget below — AuraGo hands you eight verified places you've never heard of, each with a full plan."
+            : "Name a place below and AuraGo builds the full itinerary — plus four similar hidden gems nearby."}
+        </p>
       </div>
-    </motion.div>
+
+      {/* LIVE RAIL — mode-aware (vibes for surprise, places for know) */}
+      <div className="home-railwrap">
+        <div className="home-raillabel mono">
+          <span className="home-led" />
+          {surprise ? "TRY A VIBE · TAP TO FILL" : "NOW DEPARTING · TAP TO PLAN"}
+        </div>
+        <div className="home-rail-mask">
+          {surprise ? (
+            <div className="home-rail">
+              {vibeRail.map((v, i) => (
+                <button
+                  key={`v${i}`}
+                  className="teaser vibe lift"
+                  onClick={() => onChipFill?.(v.prompt)}
+                  tabIndex={i < VIBE_TEASERS.length ? 0 : -1}
+                  aria-hidden={i >= VIBE_TEASERS.length}
+                >
+                  <span className="teaser-ico"><Sparkles size={15} /></span>
+                  <div className="vibe-name serif">{v.title}</div>
+                  <div className="teaser-tag">{v.tag}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="home-rail">
+              {placeRail.map((t, i) => (
+                <button
+                  key={`p${i}`}
+                  className="teaser lift"
+                  onClick={() => onPickDestination?.(t.name)}
+                  tabIndex={i < PLACE_TEASERS.length ? 0 : -1}
+                  aria-hidden={i >= PLACE_TEASERS.length}
+                >
+                  <div className="teaser-top">
+                    <span className="teaser-ico"><MapPin size={15} /></span>
+                    <span className="teaser-score mono">{t.score.toFixed(1)}</span>
+                  </div>
+                  <div className="teaser-name display">{t.name}</div>
+                  <div className="teaser-region mono">{t.region}</div>
+                  <div className="teaser-tag">{t.tag}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loadError && (
+        <p className="text-[12.5px]" style={{ color: "#fbbf24" }}>{loadError}</p>
+      )}
+
+      <div className="home-hint mono">
+        ↓ Use the bar below to {surprise ? "describe your trip" : "name a destination"}
+      </div>
+
+      {/* Single canonical CTA — back-compat with the "Start a trip" pattern */}
+      <button
+        onClick={onOpenModal}
+        className="btn btn-primary btn-cta"
+        style={{ alignSelf: "flex-start", marginTop: 4 }}
+      >
+        Start a trip <ArrowRight size={14} />
+      </button>
+    </div>
   );
 }
 

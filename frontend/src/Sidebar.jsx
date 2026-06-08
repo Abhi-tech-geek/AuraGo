@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, X, Sparkles, LogOut, BarChart3, PanelLeftClose } from "lucide-react";
+import { Plus, Trash2, X, Sparkles, LogOut, BarChart3, PanelLeftClose, Sun, Moon } from "lucide-react";
 
 const MAX_SESSIONS = 5;
 
@@ -16,6 +16,8 @@ export default function Sidebar({
   open,
   onClose,
   onTogglePin,
+  theme,
+  onToggleTheme,
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const atLimit = sessions.length >= MAX_SESSIONS;
@@ -179,12 +181,22 @@ export default function Sidebar({
           >
             <BarChart3 size={12} /> Compare locked trips
           </button>
-          <button
-            onClick={onSignOut}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-2 text-xs text-slate-300 hover:bg-white/[0.06]"
-          >
-            <LogOut size={12} /> Sign out
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onSignOut}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-2 text-xs text-slate-300 hover:bg-white/[0.06]"
+            >
+              <LogOut size={12} /> Sign out
+            </button>
+            <button
+              onClick={onToggleTheme}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-[var(--accent)]"
+              title={theme === "light" ? "Switch to dark" : "Switch to light"}
+              aria-label="Toggle theme"
+            >
+              {theme === "light" ? <Moon size={13} /> : <Sun size={13} />}
+            </button>
+          </div>
         </div>
       </aside>
     </>

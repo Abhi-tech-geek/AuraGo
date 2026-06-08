@@ -1,15 +1,29 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Mail, Lock, Loader2, Eye, EyeOff,
-  ArrowRight, Plane,
+  Mail, Lock, Loader2, Eye, EyeOff, ArrowRight,
+  Check, Sparkles,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
-// Stable Unsplash CDN URL — wide beach/coastline at golden hour. The whole
-// page sits on top of this so we use a high-res landscape variant.
-const HERO_IMAGE =
-  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2000&q=80";
+// Brand mark — small accent square + AuraGo wordmark (Anton + Anton in
+// pill). Used in the auth hero. Matches the Terminal design's `.brand`.
+function BrandMark({ size = 22 }) {
+  return (
+    <span className="brand" style={{ "--bz": `${size}px` }}>
+      <span
+        className="brand-mark"
+        style={{ width: size + 14, height: size + 14 }}
+      >
+        <Sparkles size={size - 4} />
+      </span>
+      <span className="brand-word" style={{ fontSize: size }}>
+        <span className="bw-1">AURA</span>
+        <span className="bw-2">GO</span>
+      </span>
+    </span>
+  );
+}
 
 export default function Auth() {
   const [mode, setMode]         = useState("signin");
@@ -37,8 +51,7 @@ export default function Auth() {
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
+          email: email.trim(), password,
         });
         if (error) throw error;
       }
@@ -68,175 +81,122 @@ export default function Auth() {
     }
   };
 
-  // Single dark palette — light-mode toggle is off for now.
-  const C = {
-    card:      "bg-slate-950/55 border-white/[0.08] text-slate-100",
-    label:     "text-slate-300",
-    muted:     "text-slate-400",
-    inputWrap: "bg-white/[0.05] border-white/10 focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--ring)]",
-    inputText: "text-slate-100 placeholder:text-slate-500",
-    link:      "text-slate-300 hover:text-white",
-  };
-
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden text-white">
-      {/* Full-bleed hero image */}
-      <img
-        src={HERO_IMAGE}
-        alt="Coastline at golden hour"
-        className="absolute inset-0 h-full w-full object-cover"
-        referrerPolicy="no-referrer"
-        loading="eager"
-      />
-      {/* Dark wash so the headline + form read on any image variant */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(110deg, rgba(8,12,28,0.78) 0%, rgba(8,12,28,0.55) 45%, rgba(8,12,28,0.35) 100%)",
-        }}
-      />
-      {/* Subtle accent glow behind the headline */}
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-32 top-1/4 h-96 w-96 rounded-full blur-3xl"
-        style={{ background: "rgba(212,175,55,0.16)" }}
-        animate={{ x: [0, 30, -10, 0], y: [0, -20, 10, 0], opacity: [0.45, 0.7, 0.45] }}
-        transition={{ duration: 16, repeat: Infinity, ease: "easeInOut" }}
-      />
+    <div className="ra">
+      <div className="ra-glow" />
+      <div className="grain" />
 
-      {/* Foreground grid */}
-      <div className="relative z-10 mx-auto grid min-h-[100dvh] max-w-7xl gap-8 px-4 py-10 sm:px-10 sm:py-14 lg:grid-cols-2 lg:items-center lg:gap-16">
+      {/* =============== LEFT — HERO =============== */}
+      <div className="ra-left">
+        <BrandMark size={22} />
 
-        {/* ============= LEFT: brand + giant headline ============= */}
+        <div className="ra-hero">
+          <span className="eyebrow">AI travel discovery · live-checked</span>
+          <motion.h1
+            className="ra-h"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          >
+            Go where the<br />
+            <span className="serif-i accent">crowd isn't.</span>
+          </motion.h1>
+          <p className="ra-sub">
+            Tell AuraGo your budget and vibe — get 8 verified hidden gems,
+            day-by-day plans, real booking links. In under 30 seconds.
+          </p>
+
+          <div className="ra-ticks">
+            <span><Check size={14} className="accent" /> 8 cross-checked picks per ask</span>
+            <span><Check size={14} className="accent" /> Live weather + price snapshots</span>
+            <span><Check size={14} className="accent" /> Share with friends · plan together</span>
+          </div>
+        </div>
+
+        <div className="ra-foot mono">© AURAGO · MADE FOR HIDDEN GEMS</div>
+      </div>
+
+      {/* =============== RIGHT — FORM =============== */}
+      <div className="ra-right">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          className="ra-card"
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ type: "spring", stiffness: 110, damping: 20 }}
-          className="flex flex-col gap-5 text-white"
+          transition={{ delay: 0.08, duration: 0.45 }}
         >
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/15 backdrop-blur-md">
-              <Plane size={18} className="text-white" />
-            </div>
-            <span className="text-[14px] font-semibold uppercase tracking-[0.25em] text-white/80">
-              AuraGo
-            </span>
+          <div className="ra-card-head">
+            <AnimatePresence mode="wait">
+              <motion.h2
+                key={mode}
+                className="ra-ttl"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18 }}
+              >
+                {mode === "signup" ? "Create account" : "Sign in"}
+              </motion.h2>
+            </AnimatePresence>
+            <span className="pill-accent">{mode === "signup" ? "NEW" : "RETURN"}</span>
           </div>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08, type: "spring", stiffness: 110, damping: 18 }}
-            className="font-extrabold uppercase leading-[0.95] tracking-tight text-white"
-            style={{
-              fontSize: "clamp(2.6rem, 7vw, 5.5rem)",
-              letterSpacing: "-0.02em",
-              textShadow: "0 4px 24px rgba(0,0,0,0.35)",
-            }}
-          >
-            Discover<br/>Hidden Gems.
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.18 }}
-            className="max-w-[460px] text-[15px] font-medium leading-relaxed text-white/85 sm:text-[16px]"
-          >
-            Where the AI finds the places guidebooks miss. AuraGo plans
-            your journey — destinations, days, and booking links — in
-            under thirty seconds.
-          </motion.p>
-
-          <motion.p
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-[12px] uppercase tracking-[0.18em] text-white/60"
-          >
-            <span className="accent-text">●</span>{" "}
-            8 live-checked picks · share with friends · book inside
-          </motion.p>
-        </motion.div>
-
-        {/* ============= RIGHT: glassmorphic form card ============= */}
-        <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.985 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ delay: 0.1, type: "spring", stiffness: 110, damping: 20 }}
-          className={`mx-auto w-full max-w-[440px] rounded-3xl border p-6 backdrop-blur-2xl sm:p-8 ${C.card}`}
-          style={{ boxShadow: "0 30px 80px -20px rgba(0,0,0,0.45)" }}
-        >
-          {/* heading row */}
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={mode}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-              className="mb-5"
-            >
-              <h2 className="serif text-3xl">
-                {mode === "signup" ? "Create your account" : "Welcome back"}
-              </h2>
-              <p className={`mt-1 text-[13px] ${C.muted}`}>
-                {mode === "signup"
-                  ? "30 seconds and your first hidden-gem deck is ready."
-                  : "Sign in to pick up your trips, share with friends, and lock plans."}
-              </p>
-            </motion.div>
-          </AnimatePresence>
-
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            <FieldLine label="Email" C={C} icon={<Mail size={15} className={C.muted} />}>
+          <form onSubmit={handleSubmit} className="ra-form">
+            <div className="field">
+              <label htmlFor="email"><Mail size={12} /> Email</label>
               <input
-                type="email" required autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                className={`flex-1 bg-transparent text-[14.5px] focus:outline-none ${C.inputText}`}
+                id="email" type="email" required autoComplete="email"
+                value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="input"
               />
-            </FieldLine>
+            </div>
 
-            <FieldLine label="Password" C={C} icon={<Lock size={15} className={C.muted} />}>
-              <input
-                type={showPassword ? "text" : "password"}
-                required minLength={6}
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className={`flex-1 bg-transparent text-[14.5px] focus:outline-none ${C.inputText}`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((s) => !s)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                className={`rounded-md p-1 ${C.muted} hover:opacity-70`}
-                tabIndex={-1}
-              >
-                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
-            </FieldLine>
-
-            {mode === "signin" && (
-              <div className="flex justify-end">
+            <div className="field">
+              <div className="ra-pwrow">
+                <label htmlFor="pw"><Lock size={12} /> Password</label>
+                {mode === "signin" && (
+                  <button type="button" onClick={handleForgot} className="ra-link">
+                    Forgot?
+                  </button>
+                )}
+              </div>
+              <div style={{ position: "relative" }}>
+                <input
+                  id="pw"
+                  type={showPassword ? "text" : "password"}
+                  required minLength={6}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "signup" ? "min 6 characters" : "your password"}
+                  className="input" style={{ paddingRight: 38 }}
+                />
                 <button
                   type="button"
-                  onClick={handleForgot}
-                  className={`text-[12.5px] font-medium hover:underline ${C.link}`}
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  tabIndex={-1}
+                  style={{
+                    position: "absolute", right: 8, top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "transparent", border: "none",
+                    color: "var(--ink-dim)", cursor: "pointer", padding: 6,
+                  }}
                 >
-                  Forgot password?
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-            )}
+            </div>
 
             <AnimatePresence>
               {error && (
                 <motion.p
                   initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  className="rounded-lg border border-red-400/40 bg-red-400/[0.08] p-2 text-xs text-red-200"
+                  style={{
+                    fontSize: 12, color: "#fb7185",
+                    border: "1px solid rgba(251,113,133,0.30)",
+                    background: "rgba(251,113,133,0.08)",
+                    borderRadius: "var(--r-sm)", padding: 9,
+                  }}
                 >
                   {error}
                 </motion.p>
@@ -244,7 +204,12 @@ export default function Auth() {
               {info && (
                 <motion.p
                   initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                  className="rounded-lg border border-emerald-400/40 bg-emerald-400/[0.08] p-2 text-xs text-emerald-200"
+                  style={{
+                    fontSize: 12, color: "#5dd39e",
+                    border: "1px solid rgba(60,240,106,0.30)",
+                    background: "rgba(60,240,106,0.08)",
+                    borderRadius: "var(--r-sm)", padding: 9,
+                  }}
                 >
                   {info}
                 </motion.p>
@@ -253,52 +218,31 @@ export default function Auth() {
 
             <motion.button
               type="submit" disabled={busy}
-              whileHover={!busy ? { scale: 1.01 } : {}}
-              whileTap={!busy ? { scale: 0.98 } : {}}
+              whileHover={!busy ? { y: -2 } : {}} whileTap={!busy ? { scale: 0.98 } : {}}
               transition={{ type: "spring", stiffness: 420, damping: 20 }}
-              className="accent-bg accent-glow group flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-[14px] font-semibold tracking-wide text-slate-900 uppercase disabled:opacity-50"
+              className="btn btn-primary btn-cta"
+              style={{ width: "100%", marginTop: 6, padding: "13px 18px" }}
             >
               {busy ? (
                 <><Loader2 size={14} className="animate-spin" /> Please wait…</>
               ) : (
-                <>
-                  {mode === "signup" ? "Sign up" : "Sign in"}
-                  <ArrowRight size={14} className="transition group-hover:translate-x-0.5" />
-                </>
+                <>{mode === "signup" ? "Create account" : "Sign in"} <ArrowRight size={14} /></>
               )}
             </motion.button>
           </form>
 
-          {/* footer link — switch sign in/up */}
-          <p className={`mt-5 text-center text-[13px] ${C.muted}`}>
+          <p className="ra-toggle">
             {mode === "signup" ? "Already a planner?" : "Are you new?"}{" "}
             <button
               type="button"
               onClick={() => { setMode(mode === "signup" ? "signin" : "signup"); setError(null); setInfo(null); }}
-              className={`font-semibold underline-offset-4 hover:underline ${C.link}`}
+              className="ra-link"
+              style={{ fontFamily: "var(--sans)", fontSize: 13.5, textTransform: "none", letterSpacing: 0 }}
             >
               {mode === "signup" ? "Sign in" : "Create an account"}
             </button>
           </p>
-
-          <p className={`mt-4 border-t border-white/[0.08] pt-3 text-center text-[10.5px] ${C.muted}`}>
-            By continuing, you agree to AuraGo's terms & privacy policy.
-          </p>
         </motion.div>
-      </div>
-    </div>
-  );
-}
-
-function FieldLine({ label, icon, children, C }) {
-  return (
-    <div>
-      <label className={`mb-1.5 block text-[12px] font-medium ${C.label}`}>
-        {label}
-      </label>
-      <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${C.inputWrap}`}>
-        {icon}
-        {children}
       </div>
     </div>
   );
