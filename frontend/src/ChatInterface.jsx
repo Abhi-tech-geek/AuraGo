@@ -887,214 +887,137 @@ function LockChip({ message }) {
 // =====================================================================
 // MysteryDeck
 // =====================================================================
+// ---------- Mystery deck → split-flap departures board ----------
+// Each card renders as a row in a board frame. The hint_category gets
+// scrambled into target letters using FlapTile components for the
+// classic Solari-board animation. Rows reveal one-by-one on mount.
+const FLAP_CHARS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 function MysteryDeck({ message, prefs, dimmed, onCardOpen }) {
   const cards = message.payload?.cards ?? [];
-  const scrollerRef = useRef(null);
-  const [canPrev, setCanPrev] = useState(false);
-  const [canNext, setCanNext] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [revealed, setRevealed] = useState(0);
 
-  // Keep arrow / dot state in sync with scroll position
+  // Stagger the row reveal — every 230ms one more row "settles".
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const update = () => {
-      setCanPrev(el.scrollLeft > 4);
-      setCanNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-      // active index = nearest card start
-      const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12; // gap-3 = 12px
-      setActiveIdx(Math.round(el.scrollLeft / cardWidth));
-    };
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => { el.removeEventListener("scroll", update); ro.disconnect(); };
+    let n = 0;
+    const t = setInterval(() => {
+      n += 1; setRevealed(n);
+      if (n >= cards.length) clearInterval(t);
+    }, 230);
+    return () => clearInterval(t);
   }, [cards.length]);
 
-  const scrollBy = (dir) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12;
-    el.scrollBy({ left: dir * cardWidth, behavior: "smooth" });
-  };
-
-  const scrollToIdx = (i) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const cardWidth = (el.querySelector("[data-card]")?.clientWidth ?? 240) + 12;
-    el.scrollTo({ left: i * cardWidth, behavior: "smooth" });
-  };
+  const allRevealed = revealed >= cards.length;
 
   return (
     <motion.div layout
-      animate={{ opacity: dimmed ? 0.3 : 1, scale: dimmed ? 0.98 : 1 }}
+      animate={{ opacity: dimmed ? 0.3 : 1, scale: dimmed ? 0.985 : 1 }}
       transition={{ duration: 0.25 }}
-      className={`glass-strong accent-border relative rounded-2xl p-3 sm:p-5 ${dimmed ? "pointer-events-none" : ""}`}
+      className={`board glass-strong hud rise ${dimmed ? "pointer-events-none" : ""}`}
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-          <Sparkles size={10} className="accent-text" />
-          {cards.length} verified mystery options
+      <div className="board-top">
+        <div className="board-id mono">
+          <span className="board-led" /> AURAGO&nbsp;&nbsp;DEPARTURES
         </div>
-        <div className="text-[11px] text-slate-400">
-          From <span className="accent-text font-medium">{prefs.origin}</span> ·
-          ₹{fmtINR(prefs.budget_inr)} · {prefs.days} {prefs.days === 1 ? "day" : "days"} · {prefs.party_size} {prefs.party_size === 1 ? "person" : "people"}
+        <div className="board-clock mono">
+          {allRevealed
+            ? `${cards.length} GEMS · LIVE-CHECKED`
+            : "UPDATING…"}
         </div>
       </div>
+
       {message.payload?.intro && (
-        <p className="mb-4 text-[15px] leading-relaxed text-slate-100">
+        <p className="mt-3 text-[13.5px] leading-relaxed text-[color:var(--ink-soft)]">
           {message.payload.intro}
         </p>
       )}
 
-      {/* Deck + chevron arrows. Arrows hidden on mobile (touch swipe is enough). */}
-      <div className="relative">
-        <div ref={scrollerRef} className="deck-scroll -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
-          {cards.map((c, i) => (
-            <MysteryCard
-              key={c.id} card={c} index={i}
-              onOpen={() => onCardOpen(c)} disabled={dimmed}
-            />
-          ))}
-        </div>
-
-        {/* Prev */}
-        <button
-          onClick={() => scrollBy(-1)}
-          aria-label="Previous card"
-          className={`absolute left-0 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-slate-900/80 p-1.5 text-slate-200 backdrop-blur transition hover:bg-slate-900 sm:flex ${canPrev ? "opacity-100" : "pointer-events-none opacity-0"}`}
-        >
-          <ChevronLeft size={16} />
-        </button>
-        {/* Next */}
-        <button
-          onClick={() => scrollBy(1)}
-          aria-label="Next card"
-          className={`absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 rounded-full border border-white/10 bg-slate-900/80 p-1.5 text-slate-200 backdrop-blur transition hover:bg-slate-900 sm:flex ${canNext ? "opacity-100" : "pointer-events-none opacity-0"}`}
-        >
-          <ChevronRight size={16} />
-        </button>
+      <div className="board-colhead mono">
+        <span>#</span>
+        <span>Hidden gem</span>
+        <span className="hide-sm">Vibe</span>
+        <span className="ta-c">AI</span>
+        <span className="hide-xs ta-r">From</span>
+        <span />
       </div>
 
-      {/* Dot indicators */}
-      {cards.length > 1 && (
-        <div className="mt-3 flex items-center justify-center gap-1.5">
-          {cards.map((_, i) => (
-            <button
-              key={i}
-              aria-label={`Go to card ${i + 1}`}
-              onClick={() => scrollToIdx(i)}
-              className="rounded-full transition"
-              style={{
-                width:  i === activeIdx ? 18 : 6,
-                height: 6,
-                background: i === activeIdx ? "var(--accent)" : "rgba(255,255,255,0.18)",
-              }}
-            />
-          ))}
-        </div>
-      )}
+      <div className="board-rows">
+        {cards.map((c, i) => (
+          <BoardRow
+            key={c.id}
+            card={c}
+            ord={i + 1}
+            active={i < revealed}
+            onOpen={() => onCardOpen(c)}
+          />
+        ))}
+      </div>
+
+      <div className="board-foot">
+        <span className="mono">▸ TAP A ROW TO FLIP OPEN THE FULL PLAN</span>
+        <span className="board-foot-r mono hide-sm">
+          FROM {prefs.origin?.toUpperCase() || "—"} ·
+          ₹{fmtINR(prefs.budget_inr)} ·
+          {" "}{prefs.days} {prefs.days === 1 ? "DAY" : "DAYS"}
+        </span>
+      </div>
     </motion.div>
   );
 }
 
-function MysteryCard({ card, index, onOpen, disabled }) {
-  return (
-    <motion.button
-      layoutId={`card-${card.id}`}
-      data-card
-      onClick={onOpen} disabled={disabled}
-      initial={{ opacity: 0, y: 14, rotateZ: -1.5 }}
-      animate={{ opacity: 1, y: 0, rotateZ: 0 }}
-      whileHover={!disabled ? { y: -4, scale: 1.015 } : {}}
-      whileTap={!disabled ? { scale: 0.985 } : {}}
-      transition={{ delay: 0.07 * index, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-      className="card-hover relative flex w-[260px] shrink-0 flex-col gap-3 overflow-hidden rounded-2xl border border-white/[0.08] p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 sm:w-[240px]"
-      style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))" }}
-    >
-      {/* Animated decorative glow blob in the background */}
-      <motion.div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full blur-2xl"
-        style={{ background: "var(--accent-soft)" }}
-        animate={{ opacity: [0.5, 0.8, 0.5], scale: [1, 1.1, 1] }}
-        transition={{ duration: 4 + index * 0.4, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      <div className="relative flex items-center justify-between">
-        <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">
-          {card.vibe}
-        </span>
-        {card.accessibility_ok && <Accessibility size={14} className="accent-text" />}
-      </div>
-
-      {/* Text-only mystery hint. We layer three elements:
-            1. a huge faded ordinal numeral (01..08) as a watermark
-            2. the category as a serif italic word in accent colour
-            3. a thin accent rule underneath
-          Together they keep the card feeling premium without an icon. */}
-      <div className="relative flex h-28 items-center justify-center overflow-hidden">
-        <span
-          aria-hidden="true"
-          className="serif pointer-events-none absolute inset-0 flex items-center justify-center text-[112px] leading-none text-white/[0.035] select-none"
-        >
-          {String(index + 1).padStart(2, "0")}
-        </span>
-        <motion.div
-          className="accent-text relative serif italic text-3xl sm:text-[2.25rem] leading-none tracking-tight"
-          animate={{ y: [0, -2, 0] }}
-          transition={{ duration: 4 + index * 0.25, repeat: Infinity, ease: "easeInOut" }}
-        >
-          {labelForHint(card.hint_category)}
-        </motion.div>
-        <span
-          aria-hidden="true"
-          className="accent-bg absolute bottom-3 h-px w-10 opacity-70"
-        />
-      </div>
-
-      <div className="relative min-h-[40px] text-[13px] leading-snug text-slate-300">
-        {card.blurb}
-      </div>
-      <div className="relative flex items-center justify-between border-t border-white/[0.06] pt-3 text-[12px]">
-        <div className="flex items-center gap-1 text-slate-400">
-          <Sparkles size={12} className="accent-text" />
-          <span className="font-semibold text-slate-100">
-            {card.ai_value_score?.toFixed(1)}
-          </span>
-          <span>/ 10</span>
-        </div>
-        <div className="font-medium text-slate-300">₹{fmtINR(card.est_cost_inr)}</div>
-      </div>
-    </motion.button>
-  );
+// Single flap tile that scrambles toward its target char on activation.
+function FlapTile({ target, start }) {
+  const [ch, setCh] = useState(" ");
+  useEffect(() => {
+    if (!start) { setCh(" "); return; }
+    const tgt = (target || " ").toUpperCase();
+    if (tgt === " ") { setCh(" "); return; }
+    let cur = Math.floor(Math.random() * 12) + 4; // scramble steps
+    const t = setInterval(() => {
+      cur -= 1;
+      setCh((prev) => {
+        if (cur <= 0) { clearInterval(t); return tgt; }
+        const ci = Math.max(0, FLAP_CHARS.indexOf(prev));
+        return FLAP_CHARS[(ci + 1) % FLAP_CHARS.length];
+      });
+    }, 55);
+    return () => clearInterval(t);
+  }, [start, target]);
+  return <span className={"flap2" + (ch === " " ? " blank" : "")}>{ch === " " ? " " : ch}</span>;
 }
 
-// Decorative puzzle-shaped backdrop behind each mystery card emoji.
-// Pure SVG, no images needed. Each card gets a slightly different rotation
-// so the deck feels hand-laid.
-function PuzzleArt({ index }) {
-  const rot = (index * 7) - 12;
+function BoardRow({ card, ord, active, onOpen }) {
+  const ordStr = String(ord).padStart(2, "0");
+  // Use hint_category as the "mystery" label rendered through flap tiles.
+  // Pad to 9 chars so every row aligns; tiles auto-blank on spaces.
+  const category = (card.hint_category || "MYSTERY").toUpperCase();
+  const letters = category.padEnd(9, " ").slice(0, 9).split("");
+
   return (
-    <svg
-      viewBox="0 0 100 100"
-      className="absolute inset-0 m-auto h-24 w-24 opacity-25"
-      style={{ transform: `rotate(${rot}deg)` }}
-      aria-hidden="true"
+    <button
+      className={"brow" + (active ? " on" : "")}
+      onClick={onOpen}
     >
-      <defs>
-        <linearGradient id={`pa-${index}`} x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.9" />
-          <stop offset="100%" stopColor="var(--accent-2)" stopOpacity="0.4" />
-        </linearGradient>
-      </defs>
-      {/* classic puzzle-piece silhouette */}
-      <path
-        fill={`url(#pa-${index})`}
-        d="M20 30 h22 v-6 a8 8 0 1 1 16 0 v6 h22 v22 h6 a8 8 0 1 1 0 16 h-6 v22 h-22 v-6 a8 8 0 1 0 -16 0 v6 h-22 v-22 h-6 a8 8 0 1 0 0 -16 h6 z"
-      />
-    </svg>
+      <span className="brow-ord">{ordStr}</span>
+      <span className="brow-name">
+        <span className="flaps">
+          {letters.map((ch, i) => <FlapTile key={i} target={ch} start={active} />)}
+          {card.accessibility_ok && (
+            <span className="brow-acc" title="Step-free access">
+              <Accessibility size={12} />
+            </span>
+          )}
+        </span>
+        <span className="brow-blurb">{card.blurb}</span>
+      </span>
+      <span className="brow-vibe mono hide-sm">{card.vibe}</span>
+      <span className="brow-score display">{(card.ai_value_score ?? 0).toFixed(1)}</span>
+      <span className="brow-cost mono hide-xs">~₹{fmtINR(card.est_cost_inr)}</span>
+      <span className="brow-go">
+        <span className="mono">BOARD</span>
+        <ChevronRight size={14} />
+      </span>
+    </button>
   );
 }
 
