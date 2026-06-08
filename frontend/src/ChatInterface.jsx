@@ -1023,6 +1023,62 @@ function BoardRow({ card, ord, active, onOpen }) {
 
 
 // =====================================================================
+// SectionTitle — small heading row used throughout the itinerary
+// =====================================================================
+function SectionTitle({ icon, title, sub }) {
+  return (
+    <div className="sec-title">
+      {icon}
+      <h3 className="serif">{title}</h3>
+      {sub && <span className="trip-sub">{sub}</span>}
+    </div>
+  );
+}
+
+// =====================================================================
+// HudMap — fake-HUD route visualisation. Pure SVG, no API key needed.
+// Stops 1..4 are positioned on preset lattice points. The final stop
+// gets the bright "dest" treatment.
+// =====================================================================
+function HudMap({ stops, dest, mapsHref }) {
+  const layouts = [
+    [[50, 50]],
+    [[18, 76], [82, 26]],
+    [[12, 80], [50, 50], [88, 22]],
+    [[10, 82], [38, 58], [66, 40], [90, 18]],
+  ];
+  const safeStops = Array.isArray(stops) && stops.length > 0 ? stops.slice(0, 4) : [dest || "Destination"];
+  const pos = layouts[Math.min(safeStops.length, 4) - 1] || [[50, 50]];
+  const pts = safeStops.map((s, i) => ({ s, x: pos[i][0], y: pos[i][1] }));
+  const path = pts.map((p, i) => (i === 0 ? "M" : "L") + " " + p.x + " " + p.y).join(" ");
+  return (
+    <div className="hudmap hud">
+      <div className="hudmap-topo" />
+      <div className="hudmap-meta mono">
+        <span className="hudmap-led" /> LIVE MAP · {(dest || "").toUpperCase()}
+      </div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="hudmap-svg">
+        <path d={path} fill="none" stroke="var(--accent)" strokeWidth="0.5"
+              strokeDasharray="2 2" opacity="0.7" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {pts.map((p, i) => (
+        <div className={"hudpin" + (i === pts.length - 1 ? " dest" : "")}
+             style={{ left: p.x + "%", top: p.y + "%" }} key={i}>
+          <span className="hudpin-dot" />
+          <span className="hudpin-lab mono">{i === pts.length - 1 ? "★ " : ""}{p.s}</span>
+        </div>
+      ))}
+      {mapsHref && (
+        <a className="hudmap-open btn btn-ghost btn-sm" href={mapsHref} target="_blank" rel="noreferrer">
+          <ExternalLink size={13} /> Open in Maps
+        </a>
+      )}
+    </div>
+  );
+}
+
+
+// =====================================================================
 // ItineraryView — deep-dive panel with route picker + budget breakdown
 // =====================================================================
 function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimilar, onLocked, onOpenChat }) {
@@ -1091,7 +1147,6 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
   );
 
   const grandTotal = totalEstimate + totalRouteCost;
-  const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(p.destination ?? "")}&output=embed`;
 
   const handleLock = async () => {
     setLocking(true);
@@ -1187,103 +1242,86 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
     }
   };
 
+  // Boarding-pass booking code — first 3 letters of destination + day count.
+  const passCode = "AG-" + (p.destination || "").replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase() + "-" + (p.days?.length ?? prefs.days ?? 0) + "D";
+  const routeStopsForMap = (Array.isArray(p.route_stops) && p.route_stops.length >= 2)
+    ? p.route_stops
+    : [prefs.origin || "Origin", p.destination || "Destination"];
+
   return (
     <motion.section layout
       initial={{ opacity: 0, y: 16, height: 0 }}
       animate={{ opacity: 1, y: 0, height: "auto" }}
       exit={{ opacity: 0, y: 8, height: 0 }}
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-      className="glass-strong accent-border accent-glow mt-3 overflow-hidden rounded-2xl p-3 sm:p-6"
+      className="itin glass-strong rise mt-3"
     >
-      {/* header */}
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <button onClick={onBack}
-          className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs hover:bg-white/[0.08]">
-          <ArrowLeft size={12} /> Back to options
+      {/* ============ TOP BAR ============ */}
+      <div className="itin-head">
+        <button onClick={onBack} className="btn btn-ghost btn-sm">
+          <ArrowLeft size={14} /> Board
         </button>
-        <div className="flex flex-wrap items-center gap-2">
-          <MapPin size={14} className="accent-text" />
-          <h3 className="serif text-xl sm:text-2xl">{p.destination}</h3>
-          <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">
-            {p.vibe}
-          </span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] text-slate-300">
-            {km} km from {prefs.origin}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="itin-actions">
           {memberCount > 1 && (
-            <span
-              className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-300"
-              title={`${memberCount} people on this trip`}
-            >
-              <Users size={11} className="accent-text" />
-              {memberCount}
+            <span className="pill" title={`${memberCount} people on this trip`}>
+              <Users size={12} className="accent-text" /> {memberCount}
             </span>
           )}
-          <motion.button
-            onClick={handleInvite}
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
-            title="Invite friends to plan together (live sync)"
-          >
-            {inviteCopied ? <Check size={12} className="accent-text" /> : <UserPlus size={12} />}
-            {inviteCopied ? "Invite copied" : "Invite friends"}
-          </motion.button>
+          <button onClick={handleInvite} className="btn btn-ghost btn-sm" title="Invite friends to plan together">
+            {inviteCopied ? <Check size={13} className="accent-text" /> : <UserPlus size={13} />}
+            {inviteCopied ? "Copied" : "Invite"}
+          </button>
           <CreatePoll sessionId={sessionId} />
-          <motion.button
-            onClick={onOpenChat}
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.95 }}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
-            title="Open trip chat thread"
-          >
-            <MessageSquare size={12} className="accent-text" />
-            Chat
-          </motion.button>
+          <button onClick={onOpenChat} className="btn btn-ghost btn-sm" title="Open trip chat">
+            <MessageSquare size={13} className="accent-text" /> Chat
+          </button>
           {locked && tripId && (
-            <button
-              onClick={handleShare}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-xs hover:bg-white/[0.08]"
-              title="Share this trip"
-            >
-              {shareCopied ? <Check size={12} className="accent-text" /> : <Share2 size={12} />}
-              {shareCopied ? "Link copied" : "Share trip"}
+            <button onClick={handleShare} className="btn btn-ghost btn-sm" title="Share this trip">
+              {shareCopied ? <Check size={13} className="accent-text" /> : <Share2 size={13} />}
+              {shareCopied ? "Link copied" : "Share"}
             </button>
           )}
           <button
             onClick={handleLock}
             disabled={locked || locking}
-            className={`accent-bg accent-glow flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold text-slate-900 disabled:opacity-60 ${locked ? "" : "pulse-ring"}`}
+            className={`btn btn-primary btn-sm btn-cta ${locked ? "" : "pulse-ring"}`}
           >
-            {locked ? <Lock size={12}/> : locking ? <Loader2 size={12} className="animate-spin"/> : <LockOpen size={12}/>}
+            {locked ? <Lock size={13}/> : locking ? <Loader2 size={13} className="animate-spin"/> : <LockOpen size={13}/>}
             {locked ? "Locked" : locking ? "Locking…" : "Lock it in"}
           </button>
         </div>
       </div>
 
-      {/* multi-stop route bar */}
-      {Array.isArray(p.route_stops) && p.route_stops.length >= 2 && (
-        <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
-          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-            <Sparkles size={11} className="accent-text" />
-            Route · {p.route_stops.length} stops
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {p.route_stops.map((stop, i) => (
-              <span key={`${stop}-${i}`} className="flex items-center gap-1.5">
-                <span className="accent-soft-bg accent-text rounded-full px-2.5 py-1 text-[12px] font-medium">
-                  {stop}
-                </span>
-                {i < p.route_stops.length - 1 && (
-                  <span className="text-slate-500">→</span>
-                )}
-              </span>
-            ))}
+      {/* ============ BOARDING PASS ============ */}
+      <div className="pass hud">
+        <div className="pass-l">
+          <span className="pill-accent">{p.vibe}</span>
+          <h2 className="serif-i itin-title">{p.destination}</h2>
+          <div className="itin-meta">
+            <span>{(prefs.country || "").toUpperCase()}</span>
+            <span className="dot">/</span>
+            <span>{Number(km).toLocaleString("en-IN")} KM FROM {(prefs.origin || "ORIGIN").toUpperCase()}</span>
+            {p.travel_date && (<>
+              <span className="dot">/</span>
+              <span>{new Date(p.travel_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }).toUpperCase()}</span>
+            </>)}
           </div>
         </div>
-      )}
+        <div className="pass-stub">
+          <div className="stub-row">
+            <span className="stub-k">BOOKING</span>
+            <span className="stub-v">{passCode}</span>
+          </div>
+          <div className="stub-row">
+            <span className="stub-k">DAYS</span>
+            <span className="stub-big">{p.days?.length ?? prefs.days ?? 0}</span>
+          </div>
+          <div className="stub-barcode" />
+        </div>
+      </div>
+
+      {/* ============ HUD ROUTE MAP ============ */}
+      <HudMap stops={routeStopsForMap} dest={p.destination} mapsHref={`https://www.google.com/maps?q=${encodeURIComponent(p.destination ?? "")}`} />
 
       {/* live verified */}
       {p.rag_verified && p.rag_summary && (
@@ -1344,30 +1382,6 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         destination={p.destination}
         date={p.travel_date || prefs.start_date}
       />
-
-      {/* MAP */}
-      <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">
-          <div className="flex items-center gap-1.5">
-            <MapPin size={11} className="accent-text" />
-            Map
-          </div>
-          <a
-            href={`https://www.google.com/maps?q=${encodeURIComponent(p.destination ?? "")}`}
-            target="_blank" rel="noreferrer"
-            className="accent-text text-[11px] hover:underline"
-          >
-            Open in Google Maps ↗
-          </a>
-        </div>
-        <iframe
-          title={`Map of ${p.destination}`}
-          src={mapSrc}
-          className="h-56 w-full border-0"
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-        />
-      </div>
 
       {/* PHOTOS */}
       {p.photos?.length > 0 && <PhotoGallery photos={p.photos} destination={p.destination} />}
@@ -1445,98 +1459,84 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         </div>
       </div>
 
-      {/* DAY PLAN */}
-      <div className="mb-5">
-        <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-          <Sparkles size={11} className="accent-text" />
-          {(p.days ?? []).length}-day plan
-        </div>
-        <div className="grid gap-2">
-          {(p.days ?? []).map((d) => {
-            // Build a Google Maps Directions deep-link with this day's
-            // activities as waypoints. No API key needed — Google geocodes
-            // the text. The destination acts as the origin anchor.
-            const acts = (d.activities ?? d.acts ?? []).filter(Boolean);
-            const dayRouteUrl = (() => {
-              if (!p.destination || acts.length === 0) return null;
-              const origin = encodeURIComponent(p.destination);
-              if (acts.length === 1) {
-                const dest = encodeURIComponent(`${acts[0]}, ${p.destination}`);
-                return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
-              }
-              const dest = encodeURIComponent(`${acts[acts.length - 1]}, ${p.destination}`);
-              const waypoints = acts.slice(0, -1)
-                .map((a) => `${a}, ${p.destination}`)
-                .join("|");
-              return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&waypoints=${encodeURIComponent(waypoints)}`;
-            })();
-            return (
-            <div key={d.day} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="mb-1 flex items-center justify-between gap-2 text-[12px]">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] font-semibold">Day {d.day}</span>
-                  <span className="truncate text-slate-300">{d.title}</span>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    onClick={async () => {
-                      if (refining || locked) return;
-                      setRefining(true);
-                      try {
-                        await authedFetch("/api/chat/refine", {
-                          method: "POST",
-                          body: JSON.stringify({
-                            sessionId,
-                            itineraryMessageId: itinerary.id,
-                            instruction: `Regenerate Day ${d.day} activities only. Keep the same destination, same vibe, same number of days, same stays. Give fresh, different activity ideas for Day ${d.day} that fit the trip mode.`,
-                          }),
-                        });
-                      } catch (e) { console.warn("shuffle failed", e); }
-                      finally { setRefining(false); }
-                    }}
-                    disabled={refining || locked}
-                    className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-[10px] text-slate-300 hover:bg-white/[0.08] disabled:opacity-50 sm:px-2 sm:py-0.5"
-                    title={locked ? "Locked — unlock to change" : "Shuffle this day's activities"}
-                    aria-label="Shuffle activities"
-                  >
-                    <RefreshCw size={12} className={`accent-text ${refining ? "animate-spin" : ""}`} />
-                    <span className="hidden sm:inline">Shuffle</span>
-                  </button>
-                  {dayRouteUrl && (
-                    <a
-                      href={dayRouteUrl} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] p-1 text-[10px] text-slate-300 hover:bg-white/[0.08] sm:px-2 sm:py-0.5"
-                      title="Open as Google Maps route"
-                      aria-label="Day route"
-                    >
-                      <MapIcon size={12} className="accent-text" />
-                      <span className="hidden sm:inline">Map</span>
-                    </a>
-                  )}
-                </div>
+      {/* DAY PLAN — vertical timeline */}
+      <SectionTitle icon={<Sparkles size={14} className="accent-text" />}
+        title={`${(p.days ?? []).length}-day plan`}
+        sub="tap any activity → maps" />
+      <div className="timeline">
+        {(p.days ?? []).map((d) => {
+          const acts = (d.activities ?? d.acts ?? []).filter(Boolean);
+          const dayRouteUrl = (() => {
+            if (!p.destination || acts.length === 0) return null;
+            const origin = encodeURIComponent(p.destination);
+            if (acts.length === 1) {
+              const dest = encodeURIComponent(`${acts[0]}, ${p.destination}`);
+              return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
+            }
+            const dest = encodeURIComponent(`${acts[acts.length - 1]}, ${p.destination}`);
+            const waypoints = acts.slice(0, -1).map((a) => `${a}, ${p.destination}`).join("|");
+            return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&waypoints=${encodeURIComponent(waypoints)}`;
+          })();
+          return (
+            <div className="tl-day" key={d.day}>
+              <div className="tl-rail">
+                <span className="tl-node display">{d.day}</span>
               </div>
-              <ul className="space-y-0.5 text-[13px] text-slate-300">
-                {(d.activities ?? d.acts ?? []).map((a, i) => {
-                  // Clickable → opens Google Maps search for the activity at
-                  // the destination. No geocoding needed; cheap UX win.
-                  const q = encodeURIComponent(`${a} ${p.destination ?? ""}`.trim());
-                  return (
-                    <li key={i} className="flex gap-2">
-                      <span className="accent-text shrink-0">•</span>
-                      <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${q}`}
-                        target="_blank" rel="noreferrer"
-                        className="min-w-0 break-words hover:accent-text hover:underline decoration-dotted underline-offset-2"
-                        title="Find on Google Maps"
-                      >{a}</a>
-                    </li>
-                  );
-                })}
-              </ul>
+              <div className="tl-body">
+                <div className="tl-head">
+                  <span className="tl-daylabel mono">DAY {String(d.day).padStart(2, "0")}</span>
+                  <h4 className="serif tl-title">{d.title}</h4>
+                  <div className="day-tools">
+                    <button
+                      onClick={async () => {
+                        if (refining || locked) return;
+                        setRefining(true);
+                        try {
+                          await authedFetch("/api/chat/refine", {
+                            method: "POST",
+                            body: JSON.stringify({
+                              sessionId, itineraryMessageId: itinerary.id,
+                              instruction: `Regenerate Day ${d.day} activities only. Keep same destination, same vibe, same number of days, same stays. Give fresh activity ideas.`,
+                            }),
+                          });
+                        } catch (e) { console.warn("shuffle failed", e); }
+                        finally { setRefining(false); }
+                      }}
+                      disabled={refining || locked}
+                      className="btn-icon" style={{ width: 32, height: 32 }}
+                      title={locked ? "Locked — unlock to change" : "Shuffle this day's activities"}
+                      aria-label="Shuffle activities"
+                    >
+                      <RefreshCw size={14} className={refining ? "animate-spin" : ""} />
+                    </button>
+                    {dayRouteUrl && (
+                      <a href={dayRouteUrl} target="_blank" rel="noreferrer"
+                         className="btn-icon" style={{ width: 32, height: 32, display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+                         title="Open day route in Maps" aria-label="Day route">
+                        <MapIcon size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <ul className="tl-acts">
+                  {acts.map((a, i) => {
+                    const q = encodeURIComponent(`${a} ${p.destination ?? ""}`.trim());
+                    return (
+                      <li key={i}>
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${q}`}
+                           target="_blank" rel="noreferrer"
+                           title="Find on Google Maps">
+                          <span className="tl-dot" />{a}
+                          <ExternalLink size={12} className="act-ext" />
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             </div>
             );
           })}
-        </div>
       </div>
 
       {/* ACCESSIBILITY NOTES */}
