@@ -40,3 +40,6 @@ Thumbs.db
 
 # Claude Code internal directories (worktrees, agents, sessions, settings)
 .claude/
+
+# Personal docs — local only, not for GitHub
+docs/
