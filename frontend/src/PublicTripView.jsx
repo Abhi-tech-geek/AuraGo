@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Loader2, MapPin, Sparkles, Lock, ShieldCheck, AlertTriangle,
+  Loader2, Sparkles, ShieldCheck, AlertTriangle,
   CloudSun, Snowflake, Sun, CloudRain, Cloud, Thermometer,
-  Hotel, Building2, Star, CheckSquare, Plane, Train, ExternalLink,
-  Accessibility, Image as ImageIcon, X,
+  Accessibility, Image as ImageIcon, X, ExternalLink,
+  Briefcase, Calendar, Bed, MapPin as Pin, Tag,
 } from "lucide-react";
+
+// =====================================================================
+// PublicTripView — read-only share page for a locked trip.
+// =====================================================================
+// Renders the SAME Terminal sections as ItineraryView (boarding pass,
+// HUD route map, vertical day timeline, stays grid, packing, totals)
+// but stripped of every interactive control — no Lock, Invite, Poll,
+// Chat, Refine, Shuffle. Anyone with the link sees the plan exactly
+// as it was locked in.
+// =====================================================================
 
 const fmtINR = (n) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n || 0);
@@ -46,28 +56,25 @@ export default function PublicTripView({ tripId }) {
 
   if (loading) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center text-slate-300">
+      <div className="relative flex min-h-screen items-center justify-center">
         <div className="aurora" />
         <div className="grain" />
-        <Loader2 size={20} className="animate-spin accent-text" />
+        <div className="spinner relative z-10" />
       </div>
     );
   }
 
   if (error || !trip) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center px-4 text-slate-200">
+      <div className="relative flex min-h-screen items-center justify-center px-4" style={{ color: "var(--ink)" }}>
         <div className="aurora" />
         <div className="grain" />
-        <div className="glass-strong relative z-10 max-w-md rounded-2xl p-6 text-center">
-          <p className="serif mb-2 text-2xl">Trip not found</p>
-          <p className="text-sm text-slate-400">
+        <div className="glass-strong relative z-10 max-w-md rounded-2xl p-6 text-center" style={{ borderRadius: "var(--r-lg)" }}>
+          <p className="display" style={{ fontSize: 30, marginBottom: 8 }}>TRIP NOT FOUND</p>
+          <p className="text-sm" style={{ color: "var(--ink-soft)" }}>
             {error ?? "The shared link may be invalid or the trip has been removed."}
           </p>
-          <a
-            href="/"
-            className="accent-bg accent-glow mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold text-slate-900"
-          >
+          <a href="/" className="btn btn-primary btn-cta" style={{ marginTop: 18 }}>
             Plan your own trip →
           </a>
         </div>
@@ -76,6 +83,57 @@ export default function PublicTripView({ tripId }) {
   }
 
   return <PublicTrip trip={trip} />;
+}
+
+// ---------------------------------------------------------------------
+// Inline HudMap helper (smaller copy of the one in ChatInterface so the
+// public bundle doesn't need to import it across files).
+// ---------------------------------------------------------------------
+function HudMap({ stops, dest, mapsHref }) {
+  const layouts = [
+    [[50, 50]],
+    [[18, 76], [82, 26]],
+    [[12, 80], [50, 50], [88, 22]],
+    [[10, 82], [38, 58], [66, 40], [90, 18]],
+  ];
+  const safeStops = Array.isArray(stops) && stops.length > 0 ? stops.slice(0, 4) : [dest || "Destination"];
+  const pos = layouts[Math.min(safeStops.length, 4) - 1] || [[50, 50]];
+  const pts = safeStops.map((s, i) => ({ s, x: pos[i][0], y: pos[i][1] }));
+  const path = pts.map((p, i) => (i === 0 ? "M" : "L") + " " + p.x + " " + p.y).join(" ");
+  return (
+    <div className="hudmap hud">
+      <div className="hudmap-topo" />
+      <div className="hudmap-meta mono">
+        <span className="hudmap-led" /> LIVE MAP · {(dest || "").toUpperCase()}
+      </div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="hudmap-svg">
+        <path d={path} fill="none" stroke="var(--accent)" strokeWidth="0.5"
+              strokeDasharray="2 2" opacity="0.7" vectorEffect="non-scaling-stroke" />
+      </svg>
+      {pts.map((p, i) => (
+        <div key={i} className={"hudpin" + (i === pts.length - 1 ? " dest" : "")}
+             style={{ left: p.x + "%", top: p.y + "%" }}>
+          <span className="hudpin-dot" />
+          <span className="hudpin-lab mono">{i === pts.length - 1 ? "★ " : ""}{p.s}</span>
+        </div>
+      ))}
+      {mapsHref && (
+        <a className="hudmap-open btn btn-ghost btn-sm" href={mapsHref} target="_blank" rel="noreferrer">
+          <ExternalLink size={13} /> Open in Maps
+        </a>
+      )}
+    </div>
+  );
+}
+
+function SectionTitle({ icon, title, sub }) {
+  return (
+    <div className="sec-title">
+      {icon}
+      <h3 className="serif">{title}</h3>
+      {sub && <span className="trip-sub">{sub}</span>}
+    </div>
+  );
 }
 
 function PublicTrip({ trip }) {
@@ -89,363 +147,305 @@ function PublicTrip({ trip }) {
   const routeStops = Array.isArray(it.route_stops) ? it.route_stops : [];
   const accessNotes = trip.accessibility_notes ?? [];
   const totalEstimate = trip.estimated_cost_inr ?? 0;
-  const safeNights = Math.max(1, days.length - 1 || 1);
-  const mapSrc = `https://www.google.com/maps?q=${encodeURIComponent(trip.destination ?? "")}&output=embed`;
-  const dateForUrl = it.travel_date || new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
   const [openPhotoIdx, setOpenPhotoIdx] = useState(null);
+  const WIcon = useMemo(() => weatherIconFor(weather?.feel), [weather]);
 
-  const Icon = useMemo(() => weatherIconFor(weather?.feel), [weather]);
+  // Boarding-pass code — first 3 letters of destination + day count.
+  const code = "AG-" + (trip.destination || "").replace(/[^A-Z]/gi, "").slice(0, 3).toUpperCase() + "-" + days.length + "D";
+  const mapStops = routeStops.length >= 2 ? routeStops : [trip.destination || "Destination"];
+  const mapsHref = `https://www.google.com/maps?q=${encodeURIComponent(trip.destination ?? "")}`;
 
   return (
-    <div className="relative min-h-screen text-slate-100">
+    <div className="relative min-h-screen" style={{ color: "var(--ink)" }}>
       <div className="aurora" />
       <div className="grain" />
 
-      {/* Header */}
-      <header className="glass safe-pt sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2.5 sm:px-8 sm:py-3">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <div className="accent-bg accent-glow grid h-9 w-9 shrink-0 place-items-center rounded-2xl sm:h-10 sm:w-10">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-slate-900">
-              <path d="M12 2l2.5 6.5L21 11l-6.5 2.5L12 20l-2.5-6.5L3 11l6.5-2.5L12 2z" fill="currentColor"/>
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <h1 className="serif truncate text-xl leading-none sm:text-2xl">AuraGo</h1>
-            <p className="hidden text-[11px] text-slate-400 sm:block">Shared trip · view only</p>
-          </div>
-        </div>
-        <a
-          href="/"
-          className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] hover:bg-white/[0.08] sm:text-xs"
-        >
+      {/* Header strip */}
+      <header
+        className="safe-pt sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-3 sm:px-8"
+        style={{ background: "rgba(8,10,16,0.7)", borderBottom: "1px solid var(--line)", backdropFilter: "blur(8px)" }}
+      >
+        <a href="/" className="brand" style={{ "--bz": "20px", textDecoration: "none" }}>
+          <span className="brand-mark" style={{ width: 32, height: 32 }}>
+            <Sparkles size={16} />
+          </span>
+          <span className="brand-word" style={{ fontSize: 20 }}>
+            <span className="bw-1">AURA</span>
+            <span className="bw-2">GO</span>
+          </span>
+        </a>
+        <span className="pill">
+          <Lock /> · Shared trip
+        </span>
+        <a href="/" className="btn btn-primary btn-cta btn-sm">
           Plan your own →
         </a>
       </header>
 
-      <main className="safe-px relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-8" style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}>
-        <div className="glass-strong accent-border accent-glow overflow-hidden rounded-2xl p-5 sm:p-6">
-          {/* Title */}
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Lock size={14} className="accent-text" />
-              <h2 className="serif text-2xl">{trip.destination}</h2>
-              {trip.vibe && (
-                <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">
-                  {trip.vibe}
-                </span>
-              )}
+      <main className="relative z-10 mx-auto max-w-3xl px-3 py-6 sm:px-6 sm:py-10">
+        <section className="itin glass-strong rise">
+          {/* BOARDING PASS */}
+          <div className="pass hud">
+            <div className="pass-l">
+              {trip.vibe && <span className="pill-accent">{trip.vibe}</span>}
+              <h2 className="serif-i itin-title">{trip.destination}</h2>
+              <div className="itin-meta">
+                {it.travel_date && (
+                  <span>{new Date(it.travel_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }).toUpperCase()}</span>
+                )}
+                {it.travel_date && <span className="dot">/</span>}
+                <span>LOCKED {new Date(trip.locked_at || Date.now()).toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase()}</span>
+              </div>
             </div>
-            {trip.locked_at && (
-              <span className="text-[11px] text-slate-500">
-                Locked {new Date(trip.locked_at).toLocaleDateString()}
-              </span>
-            )}
+            <div className="pass-stub">
+              <div className="stub-row">
+                <span className="stub-k">BOOKING</span>
+                <span className="stub-v">{code}</span>
+              </div>
+              <div className="stub-row">
+                <span className="stub-k">DAYS</span>
+                <span className="stub-big">{days.length}</span>
+              </div>
+              <div className="stub-barcode" />
+            </div>
           </div>
 
-          {/* Multi-stop route bar */}
+          {/* MULTI-STOP ROUTE PILLS (only when applicable) */}
           {routeStops.length >= 2 && (
-            <div className="mb-4 rounded-xl border border-white/[0.08] bg-white/[0.025] p-3">
-              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <Sparkles size={11} className="accent-text" />
+            <div className="card" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", color: "var(--ink-soft)", textTransform: "uppercase" }}>
                 Route · {routeStops.length} stops
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {routeStops.map((stop, i) => (
-                  <span key={`${stop}-${i}`} className="flex items-center gap-1.5">
-                    <span className="accent-soft-bg accent-text rounded-full px-2.5 py-1 text-[12px] font-medium">
-                      {stop}
-                    </span>
-                    {i < routeStops.length - 1 && <span className="text-slate-500">→</span>}
-                  </span>
-                ))}
-              </div>
+              </span>
+              {routeStops.map((stop, i) => (
+                <span key={`${stop}-${i}`} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span className="pill-accent" style={{ fontSize: 11, padding: "4px 10px" }}>{stop}</span>
+                  {i < routeStops.length - 1 && <span style={{ color: "var(--ink-dim)" }}>→</span>}
+                </span>
+              ))}
             </div>
           )}
 
-          {/* Live verified */}
+          {/* HUD MAP */}
+          <HudMap stops={mapStops} dest={trip.destination} mapsHref={mapsHref} />
+
+          {/* Live verified summary */}
           {it.rag_summary && (
-            <div className="accent-border mb-4 flex items-start gap-2 rounded-lg border bg-white/[0.025] p-3 text-[13px] text-slate-300">
-              <ShieldCheck size={14} className="accent-text mt-0.5" />
-              <div><span className="font-medium text-slate-100">Live verified · </span>{it.rag_summary}</div>
+            <div className="verified">
+              <ShieldCheck size={16} className="accent" />
+              <div>
+                <span className="vtag mono">LIVE-VERIFIED</span>
+                <p>{it.rag_summary}</p>
+              </div>
             </div>
           )}
 
-          {/* Hazard */}
           {it.hazard && (
-            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] p-3 text-[13px] text-amber-100">
-              <AlertTriangle size={14} className="mt-0.5 text-amber-300" />
-              <div><span className="font-medium">Heads up · </span>{it.hazard}</div>
+            <div className="hazard">
+              <AlertTriangle size={16} />
+              <div><strong>Heads up</strong><p>{it.hazard}</p></div>
             </div>
           )}
 
-          {/* Weather */}
+          {/* WEATHER */}
           {weather && (
-            <div className="mb-4 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-              <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-wider text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <Icon size={11} className="accent-text" />
-                  Weather · {weather.feel ?? "expected"}
-                </div>
-                {it.travel_date && <span className="text-slate-500">{it.travel_date}</span>}
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="accent-soft-bg accent-text grid h-12 w-12 shrink-0 place-items-center rounded-xl">
-                  <Icon size={22} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-[15px] font-medium text-slate-100">{weather.summary}</div>
-                  {weather.temp_c && <div className="text-[12px] text-slate-400">{weather.temp_c}</div>}
-                  {weather.advice && (
-                    <div className="mt-1 text-[12.5px] text-slate-300">
-                      <span className="accent-text font-medium">Tip · </span>{weather.advice}
-                    </div>
-                  )}
+            <div className="card">
+              <div className="weather-top">
+                <WIcon size={32} className="accent" />
+                <div>
+                  <div className="display weather-temp">{weather.temp_c || weather.summary}</div>
+                  <div className="trip-sub">{weather.summary}</div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Map */}
-          <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">
-              <div className="flex items-center gap-1.5">
-                <MapPin size={11} className="accent-text" /> Map
-              </div>
-              <a
-                href={`https://www.google.com/maps?q=${encodeURIComponent(trip.destination ?? "")}`}
-                target="_blank" rel="noreferrer"
-                className="accent-text hover:underline"
-              >
-                Open in Google Maps ↗
-              </a>
-            </div>
-            <iframe
-              title={`Map of ${trip.destination}`}
-              src={mapSrc}
-              className="h-56 w-full border-0"
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-            />
-          </div>
-
-          {/* Photos */}
-          {photos.length > 0 && (
-            <div className="mb-4 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02]">
-              <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <div className="flex items-center gap-1.5">
-                  <ImageIcon size={11} className="accent-text" /> Photos
-                </div>
-                <a
-                  href={`https://www.google.com/search?q=${encodeURIComponent(trip.destination ?? "")}&tbm=isch`}
-                  target="_blank" rel="noreferrer"
-                  className="accent-text hover:underline"
-                >
-                  More on Google ↗
-                </a>
-              </div>
-              <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-                {photos.slice(0, 6).map((p, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setOpenPhotoIdx(i)}
-                    className="group relative aspect-[4/3] overflow-hidden bg-white/[0.04]"
-                  >
-                    <img
-                      src={p.thumb || p.url}
-                      alt={p.alt || trip.destination}
-                      loading="lazy"
-                      className="h-full w-full object-cover transition group-hover:opacity-90"
-                    />
-                  </button>
-                ))}
-              </div>
-              {openPhotoIdx !== null && photos[openPhotoIdx] && (
-                <div
-                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur"
-                  onClick={() => setOpenPhotoIdx(null)}
-                >
-                  <img
-                    src={photos[openPhotoIdx].url}
-                    alt={photos[openPhotoIdx].alt || trip.destination}
-                    className="max-h-[85vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <button
-                    onClick={() => setOpenPhotoIdx(null)}
-                    aria-label="Close photo"
-                    className="fixed right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-slate-900/80 text-slate-200 backdrop-blur"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
+              {weather.advice && (
+                <div className="weather-pack"><Tag size={13} className="accent" /> {weather.advice}</div>
               )}
             </div>
           )}
 
-          {/* Day plan */}
-          {days.length > 0 && (
-            <div className="mb-5">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <Sparkles size={11} className="accent-text" />
-                {days.length}-day plan
-              </div>
-              <div className="grid gap-2">
-                {days.map((d) => (
-                  <div key={d.day} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-                    <div className="mb-1 flex items-center gap-2 text-[12px]">
-                      <span className="accent-soft-bg accent-text rounded-full px-2 py-0.5 text-[10px] font-semibold">Day {d.day}</span>
-                      <span className="text-slate-300">{d.title}</span>
-                    </div>
-                    <ul className="space-y-0.5 text-[13px] text-slate-300">
-                      {(d.activities ?? d.acts ?? []).map((a, i) => (
-                        <li key={i} className="flex gap-2"><span className="accent-text">•</span>{a}</li>
-                      ))}
-                    </ul>
-                  </div>
+          {/* PHOTO GALLERY */}
+          {photos.length > 0 && (
+            <>
+              <SectionTitle icon={<ImageIcon size={14} className="accent" />} title="Snapshots" />
+              <div className="gallery snap-x no-scrollbar">
+                {photos.map((p, i) => (
+                  <img
+                    key={i}
+                    src={p.thumb || p.url}
+                    alt={p.alt || trip.destination}
+                    className="gallery-ph"
+                    style={{ height: 120, minWidth: 180, objectFit: "cover", cursor: "pointer" }}
+                    onClick={() => setOpenPhotoIdx(i)}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
                 ))}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Accessibility notes */}
+          {/* ACCESS NOTES */}
           {accessNotes.length > 0 && (
-            <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
-                <Accessibility size={11} className="accent-text" /> Smart access notes
+            <div className="access-note">
+              <Accessibility size={16} className="accent" />
+              <div>
+                <strong>Smart access notes</strong>
+                <ul style={{ marginTop: 4, paddingLeft: 0, listStyle: "none" }}>
+                  {accessNotes.map((n, i) => (
+                    <li key={i} style={{ fontSize: 13, color: "var(--ink-soft)", lineHeight: 1.5 }}>· {n}</li>
+                  ))}
+                </ul>
               </div>
-              <ul className="space-y-1 text-[13px] text-slate-200">
-                {accessNotes.map((n, i) => <li key={i}>· {n}</li>)}
-              </ul>
             </div>
           )}
 
-          {/* Stays */}
-          {stays.length > 0 && (
-            <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <Hotel size={11} className="accent-text" />
-                Stay options · {safeNights} {safeNights === 1 ? "night" : "nights"}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {stays.map((s, i) => {
-                  const TypeIcon = ((s.type ?? "").toLowerCase().includes("hostel")) ? Building2 : Hotel;
-                  const checkout = new Date(new Date(dateForUrl).getTime() + safeNights * 86400000)
-                    .toISOString().slice(0, 10);
-                  const bookUrl = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(`${s.name ?? ""} ${trip.destination ?? ""}`.trim())}&checkin=${dateForUrl}&checkout=${checkout}`;
+          {/* DAY PLAN — vertical timeline */}
+          {days.length > 0 && (
+            <>
+              <SectionTitle icon={<Calendar size={14} className="accent" />}
+                title={`${days.length}-day plan`}
+                sub="tap any activity → maps" />
+              <div className="timeline">
+                {days.map((d) => {
+                  const acts = (d.activities ?? d.acts ?? []).filter(Boolean);
                   return (
-                    <div key={i} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-                      <div className="mb-1 flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <TypeIcon size={13} className="accent-text shrink-0" />
-                            <span className="truncate text-[14px] font-medium text-slate-100">{s.name}</span>
-                          </div>
-                          <div className="mt-0.5 text-[11px] uppercase tracking-wider text-slate-500">
-                            {s.type}{s.best_for ? ` · ${s.best_for}` : ""}
-                          </div>
-                        </div>
-                        {typeof s.rating === "number" && (
-                          <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px]">
-                            <Star size={10} className="accent-text" fill="currentColor" />
-                            <span className="font-medium text-slate-100">{s.rating.toFixed(1)}</span>
-                          </div>
-                        )}
+                    <div className="tl-day" key={d.day}>
+                      <div className="tl-rail">
+                        <span className="tl-node display">{d.day}</span>
                       </div>
-                      {s.blurb && <p className="mb-2 line-clamp-2 text-[12.5px] text-slate-300">{s.blurb}</p>}
-                      <div className="flex items-end justify-between border-t border-white/[0.06] pt-2 text-[12px]">
-                        <div>
-                          <div className="text-slate-400">per night</div>
-                          <div className="font-semibold text-slate-100">₹{fmtINR(s.price_per_night_inr)}</div>
+                      <div className="tl-body">
+                        <div className="tl-head">
+                          <span className="tl-daylabel mono">DAY {String(d.day).padStart(2, "0")}</span>
+                          <h4 className="serif tl-title">{d.title}</h4>
                         </div>
-                        <div className="text-right">
-                          <div className="text-slate-500">{safeNights} {safeNights === 1 ? "night" : "nights"}</div>
-                          <div className="accent-text font-semibold">₹{fmtINR((s.price_per_night_inr ?? 0) * safeNights)}</div>
-                        </div>
+                        <ul className="tl-acts">
+                          {acts.map((a, i) => {
+                            const q = encodeURIComponent(`${a} ${trip.destination ?? ""}`.trim());
+                            return (
+                              <li key={i}>
+                                <a href={`https://www.google.com/maps/search/?api=1&query=${q}`}
+                                   target="_blank" rel="noreferrer">
+                                  <span className="tl-dot" />{a}
+                                  <ExternalLink size={12} className="act-ext" />
+                                </a>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       </div>
-                      <a
-                        href={bookUrl} target="_blank" rel="noreferrer"
-                        className="accent-bg accent-glow mt-2 flex items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-semibold text-slate-900 hover:scale-[1.02]"
-                      >
-                        Book on Booking.com ↗
-                      </a>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Packing */}
+          {/* STAYS */}
+          {stays.length > 0 && (
+            <>
+              <SectionTitle icon={<Bed size={14} className="accent" />} title="Where to stay" sub={`${stays.length} options`} />
+              <div className="stays-grid">
+                {stays.map((s, i) => (
+                  <div key={i} className="stay-card">
+                    <div className="stay-tier">{s.tier ?? s.best_for ?? s.type ?? "Stay"}</div>
+                    <div className="stay-name">{s.name}</div>
+                    {s.blurb && <div className="trip-sub">{s.blurb}</div>}
+                    {s.price_per_night_inr && (
+                      <div className="stay-price">
+                        <span className="display">₹{fmtINR(s.price_per_night_inr)}</span>
+                        <span className="su">/ night</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* PACKING */}
           {packing.length > 0 && (
-            <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <CheckSquare size={11} className="accent-text" /> Packing checklist
-              </div>
-              <div className="grid gap-1.5 sm:grid-cols-2">
-                {packing.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-[13px] text-slate-200">
-                    <span className="accent-text">·</span>{item}
-                  </div>
+            <>
+              <SectionTitle icon={<Briefcase size={14} className="accent" />} title="Packing checklist" sub={`${packing.length} items`} />
+              <div className="packing">
+                {packing.map((p, i) => (
+                  <span key={i} className="pack-item">
+                    <span className="pack-box" /> {p}
+                  </span>
                 ))}
               </div>
-            </div>
+            </>
           )}
 
-          {/* Booking quick links */}
-          <div className="mb-5 grid gap-2 sm:grid-cols-2">
-            <a
-              href={`https://www.skyscanner.co.in/transport/flights-to/${encodeURIComponent((trip.destination ?? "").toLowerCase().slice(0,3))}/`}
-              target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 hover:bg-white/[0.05]"
-            >
-              <Plane size={14} className="accent-text" />
-              <span className="text-[13px] text-slate-100">Search flights</span>
-              <ExternalLink size={11} className="ml-auto text-slate-400" />
-            </a>
-            <a
-              href={`https://www.confirmtkt.com/`}
-              target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 hover:bg-white/[0.05]"
-            >
-              <Train size={14} className="accent-text" />
-              <span className="text-[13px] text-slate-100">Search trains</span>
-              <ExternalLink size={11} className="ml-auto text-slate-400" />
-            </a>
-          </div>
-
-          {/* Total */}
-          <div className="accent-soft-bg flex items-center justify-between rounded-lg p-3 text-sm">
-            <span className="font-medium">Estimated total</span>
-            <span className="serif text-xl">₹{fmtINR(totalEstimate)}</span>
-          </div>
-
-          {/* Similar */}
+          {/* SIMILAR HIDDEN GEMS */}
           {similar.length > 0 && (
-            <div className="mt-5">
-              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wider text-slate-400">
-                <Sparkles size={11} className="accent-text" /> Similar places to explore
-              </div>
-              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            <>
+              <SectionTitle icon={<Sparkles size={14} className="accent" />} title="Similar hidden gems" />
+              <div className="similar">
                 {similar.map((s, i) => (
-                  <div
-                    key={i}
-                    className="flex w-[180px] shrink-0 flex-col gap-1 rounded-xl border border-white/[0.08] p-3"
-                    style={{ background: "linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))" }}
-                  >
-                    <span className="text-2xl">{s.emoji ?? "✦"}</span>
-                    <div className="text-[13px] font-medium text-slate-100">{s.name}</div>
-                    <div className="line-clamp-2 text-[11px] text-slate-400">{s.tagline}</div>
-                  </div>
+                  <span key={i} className="chip">
+                    <Pin size={12} className="accent" /> {s.name ?? s}
+                  </span>
                 ))}
+              </div>
+            </>
+          )}
+
+          {/* TOTALS */}
+          {totalEstimate > 0 && (
+            <div className="totals hud">
+              <div className="total-row">
+                <span>Estimated trip cost</span>
+                <span className="mono">₹{fmtINR(totalEstimate)}</span>
+              </div>
+              <div className="total-row grand">
+                <span className="mono grand-k">GRAND TOTAL</span>
+                <span className="display grand-v">₹{fmtINR(totalEstimate)}</span>
               </div>
             </div>
           )}
+        </section>
 
-          <p className="mt-6 text-center text-[11px] text-slate-500">
-            Shared via AuraGo · <a href="/" className="accent-text hover:underline">plan your own trip</a>
-          </p>
-        </div>
+        <p className="mono" style={{
+          textAlign: "center", marginTop: 20, fontSize: 10.5,
+          letterSpacing: "0.14em", color: "var(--ink-dim)",
+        }}>
+          PLAN GENERATED BY AURAGO · <a href="/" className="accent" style={{ textDecoration: "none" }}>BUILD YOURS →</a>
+        </p>
       </main>
+
+      {/* Photo lightbox */}
+      {openPhotoIdx !== null && photos[openPhotoIdx] && (
+        <div
+          className="aura-backdrop"
+          onClick={() => setOpenPhotoIdx(null)}
+          style={{ background: "rgba(0,0,0,0.92)", padding: 16 }}
+        >
+          <button
+            onClick={() => setOpenPhotoIdx(null)}
+            className="btn-icon"
+            style={{ position: "absolute", top: 16, right: 16, width: 36, height: 36 }}
+            aria-label="Close photo"
+          >
+            <X size={16} />
+          </button>
+          <img
+            src={photos[openPhotoIdx].url}
+            alt={photos[openPhotoIdx].alt || trip.destination}
+            style={{ maxWidth: "100%", maxHeight: "90vh", objectFit: "contain", borderRadius: 8 }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+// Small Lock-styled icon helper since we used <Lock /> without the lucide
+// component in the header pill (avoid the extra import).
+function Lock() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)" }}>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
   );
 }

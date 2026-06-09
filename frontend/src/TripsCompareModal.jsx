@@ -2,11 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Lock, Loader2, X, MapPin } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
+// =====================================================================
+// TripsCompareModal — Terminal-styled list of every locked trip
+// =====================================================================
+// Bars are scaled to the most expensive trip in the list so the user
+// can eyeball relative cost. Picks up the modal frame from .aura-modal
+// + uses the new .totals / .display / mono tokens for the summary +
+// .progress class for the fill bar (already theme-aware in index.css).
+// =====================================================================
+
 const fmtINR = (n) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n || 0);
 
 export default function TripsCompareModal({ open, onClose, userId }) {
-  const [trips, setTrips] = useState([]);
+  const [trips, setTrips]     = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
 
@@ -41,77 +50,93 @@ export default function TripsCompareModal({ open, onClose, userId }) {
   if (!open) return null;
   return (
     <div className="aura-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div className="aura-modal glass-strong rounded-3xl p-6 sm:p-8">
-        <div className="mb-5 flex items-start justify-between gap-3">
+      <div className="aura-modal" style={{ padding: 0 }}>
+        {/* Head */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+          gap: 12, padding: "22px 24px 14px",
+          borderBottom: "1px solid var(--line)",
+        }}>
           <div>
-            <h2 className="serif text-3xl">Locked trips</h2>
-            <p className="mt-1 text-sm text-slate-400">
-              Compare your finalized trips by cost. Bars are scaled to the most expensive.
+            <div className="eyebrow" style={{ marginBottom: 6 }}>
+              <BarChart3 size={11} style={{ display: "inline-block", marginRight: 6 }} />
+              LOCKED TRIPS
+            </div>
+            <h2 className="display" style={{ fontSize: 30, lineHeight: 1 }}>Trip ledger</h2>
+            <p className="trip-sub" style={{ marginTop: 8, color: "var(--ink-soft)", fontSize: 13.5 }}>
+              Cost-scaled bars across every trip you've locked. Largest one sets the 100% mark.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-white/10 bg-white/[0.03] p-1.5 text-slate-300 hover:bg-white/[0.08]"
-            aria-label="Close"
-          >
+          <button onClick={onClose} className="btn-icon" style={{ width: 36, height: 36 }} aria-label="Close">
             <X size={14} />
           </button>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-400">
-            <Loader2 size={14} className="animate-spin" /> Loading trips…
-          </div>
-        ) : error ? (
-          <p className="rounded-lg border border-red-400/30 bg-red-400/[0.06] p-3 text-sm text-red-200">
-            {error}
-          </p>
-        ) : trips.length === 0 ? (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-6 text-center">
-            <Lock size={20} className="accent-text mx-auto mb-2" />
-            <p className="text-sm font-medium text-slate-200">No locked trips yet</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Lock a destination from the itinerary view, and it will appear here.
+        {/* Body */}
+        <div style={{ padding: "18px 24px 24px", maxHeight: "calc(90vh - 110px)", overflowY: "auto" }}>
+          {loading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "44px 0", color: "var(--ink-soft)", fontSize: 13.5 }}>
+              <Loader2 size={14} className="animate-spin accent" /> Loading trips…
+            </div>
+          ) : error ? (
+            <p style={{
+              padding: 11, borderRadius: "var(--r-sm)", fontSize: 13,
+              color: "#fb7185",
+              border: "1px solid rgba(251,113,133,0.30)",
+              background: "rgba(251,113,133,0.08)",
+            }}>
+              {error}
             </p>
-          </div>
-        ) : (
-          <>
-            <Summary trips={trips} />
-            <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
-              {trips.map((t) => {
-                const cost = t.estimated_cost_inr ?? 0;
-                const pct = Math.max(4, Math.round((cost / max) * 100));
-                return (
-                  <div key={t.id} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-1.5">
-                        <MapPin size={12} className="accent-text shrink-0" />
-                        <span className="truncate text-[14px] font-medium text-slate-100">{t.destination}</span>
-                        {t.vibe && (
-                          <span className="accent-soft-bg accent-text rounded-full px-1.5 py-0.5 text-[9px] uppercase tracking-wider">
-                            {t.vibe}
-                          </span>
+          ) : trips.length === 0 ? (
+            <div className="card hud" style={{ textAlign: "center", padding: 28 }}>
+              <Lock size={22} className="accent" style={{ display: "inline-block", marginBottom: 10 }} />
+              <p style={{ fontSize: 14, fontWeight: 600 }}>No locked trips yet</p>
+              <p style={{ marginTop: 6, fontSize: 12.5, color: "var(--ink-soft)" }}>
+                Lock a destination from the itinerary view, and it will appear here.
+              </p>
+            </div>
+          ) : (
+            <>
+              <Summary trips={trips} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                {trips.map((t) => {
+                  const cost = t.estimated_cost_inr ?? 0;
+                  const pct = Math.max(4, Math.round((cost / max) * 100));
+                  return (
+                    <div key={t.id} className="card" style={{ padding: 13 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                        <div style={{ display: "flex", minWidth: 0, alignItems: "center", gap: 8 }}>
+                          <MapPin size={13} className="accent" />
+                          <span style={{
+                            overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
+                            fontSize: 14, fontWeight: 600,
+                          }}>{t.destination}</span>
+                          {t.vibe && <span className="pill-accent" style={{ fontSize: 9 }}>{t.vibe}</span>}
+                        </div>
+                        <span className="display" style={{ fontSize: 16, color: "var(--accent)" }}>
+                          ₹{fmtINR(cost)}
+                        </span>
+                      </div>
+                      <div className="progress">
+                        <div className="progress-fill" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        marginTop: 7, fontSize: 10, color: "var(--ink-dim)",
+                        fontFamily: "var(--mono)", letterSpacing: "0.04em",
+                      }}>
+                        <span>{(t.status === "locked" ? "LOCKED" : t.status || "").toUpperCase()}</span>
+                        {t.locked_at && (
+                          <span>{new Date(t.locked_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }).toUpperCase()}</span>
                         )}
                       </div>
-                      <span className="shrink-0 text-[13px] font-semibold text-slate-100">
-                        ₹{fmtINR(cost)}
-                      </span>
                     </div>
-                    <div className="progress">
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
-                      <span>{t.status === "locked" ? "Locked" : t.status}</span>
-                      {t.locked_at && (
-                        <span>{new Date(t.locked_at).toLocaleDateString()}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -121,19 +146,21 @@ function Summary({ trips }) {
   const total = trips.reduce((s, t) => s + (t.estimated_cost_inr ?? 0), 0);
   const avg = total / Math.max(1, trips.length);
   return (
-    <div className="mb-4 grid grid-cols-3 gap-2">
-      <Stat label="Total trips" value={trips.length} />
-      <Stat label="Combined cost" value={`₹${fmtINR(total)}`} />
-      <Stat label="Average" value={`₹${fmtINR(avg)}`} />
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 9, marginBottom: 18 }}>
+      <Stat label="TRIPS" value={trips.length} />
+      <Stat label="COMBINED" value={`₹${fmtINR(total)}`} />
+      <Stat label="AVERAGE" value={`₹${fmtINR(avg)}`} />
     </div>
   );
 }
 
 function Stat({ label, value }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 text-center">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="serif mt-1 text-lg leading-none">{value}</div>
+    <div className="card" style={{ textAlign: "center", padding: 12 }}>
+      <div className="eyebrow" style={{ fontSize: 9.5 }}>{label}</div>
+      <div className="display" style={{ marginTop: 4, fontSize: 18, lineHeight: 1, color: "var(--ink)" }}>
+        {value}
+      </div>
     </div>
   );
 }
