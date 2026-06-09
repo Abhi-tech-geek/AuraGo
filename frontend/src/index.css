@@ -49,6 +49,8 @@
 
   --grain-opacity: 0.035;
   --backdrop:      rgba(4,6,10,0.7);
+  --field-bg:      rgba(0,0,0,0.32);   /* inset input background */
+  --header-bg:     rgba(8,10,16,0.7);  /* translucent sticky header */
 }
 
 /* Sasta on dark — neon green */
@@ -88,6 +90,8 @@ body.theme-light {
 
   --grain-opacity: 0.025;
   --backdrop:      rgba(11,14,21,0.32);
+  --field-bg:      rgba(255,255,255,0.85);
+  --header-bg:     rgba(244,242,236,0.75);
 }
 
 body.theme-light.sasta, body.theme-light.mode-sasta {
@@ -333,7 +337,12 @@ body.theme-light .input, body.theme-light .select, body.theme-light textarea.inp
   background-repeat: no-repeat; background-position: right 12px center;
 }
 
-/* Native select option contrast — light theme uses native defaults */
+/* Native control colour-scheme so date pickers + dropdown chrome match.
+   Driven by the body theme class. */
+body.theme-dark  { color-scheme: dark; }
+body.theme-light { color-scheme: light; }
+
+/* Native select option contrast — works in both themes via tokens */
 select option, select optgroup {
   background-color: var(--panel);
   color: var(--ink);
@@ -1176,6 +1185,7 @@ body.theme-light {
   & .bg-amber-400\/\[0\.06\] { background-color: rgba(180,121,0,0.10) !important; }
   & .text-amber-100 { color: #6e4a00 !important; }
   & .text-amber-200 { color: #7a5100 !important; }
+  & .text-amber-200\/80 { color: rgba(122,81,0,0.85) !important; }
   & .text-amber-300 { color: #946400 !important; }
 
   /* Emerald / success */

@@ -162,7 +162,7 @@ export default function ConciergeChat({ context }) {
                 padding: "5px 5px 5px 12px",
                 borderRadius: "var(--r)",
                 border: "1px solid var(--line)",
-                background: "rgba(0,0,0,0.32)",
+                background: "var(--field-bg)",
               }}>
                 <input
                   value={input}

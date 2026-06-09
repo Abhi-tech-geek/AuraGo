@@ -163,7 +163,7 @@ function PublicTrip({ trip }) {
       {/* Header strip */}
       <header
         className="safe-pt sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-3 sm:px-8"
-        style={{ background: "rgba(8,10,16,0.7)", borderBottom: "1px solid var(--line)", backdropFilter: "blur(8px)" }}
+        style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--line)", backdropFilter: "blur(8px)" }}
       >
         <a href="/" className="brand" style={{ "--bz": "20px", textDecoration: "none" }}>
           <span className="brand-mark" style={{ width: 32, height: 32 }}>
