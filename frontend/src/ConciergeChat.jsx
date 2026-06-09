@@ -81,18 +81,14 @@ export default function ConciergeChat({ context }) {
 
   return (
     <>
-      {/* Floating FAB */}
+      {/* Floating FAB — pinned right edge, stacked beneath the chat FAB
+          so the two never overlap on mobile. */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
           aria-label="Ask AuraGo concierge"
-          className="fab fab-bot"
-          style={{
-            position: "fixed",
-            right: 20,
-            bottom: "calc(6.5rem + env(safe-area-inset-bottom))",
-            zIndex: 40,
-          }}
+          className="fab fab-bot fixed right-4 z-40 sm:right-6"
+          style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
         >
           <span className="fab-pulse" />
           <Bot size={20} />

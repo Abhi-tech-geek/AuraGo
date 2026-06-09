@@ -42,7 +42,8 @@ export default function Sidebar({
       )}
       <aside
         aria-hidden={!visible}
-        className={`glass safe-pt safe-pb fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,85vw)] flex-col border-r border-white/10 transition-transform duration-300 ease-out md:w-72 ${mobileTranslate} ${desktopTranslate}`}
+        className={`safe-pt safe-pb fixed left-0 top-0 z-40 flex h-[100dvh] w-[min(18rem,85vw)] flex-col transition-transform duration-300 ease-out md:w-72 ${mobileTranslate} ${desktopTranslate}`}
+        style={{ background: "var(--panel)", borderRight: "1px solid var(--line)" }}
       >
         {/* header */}
         <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">

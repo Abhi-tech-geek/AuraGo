@@ -34,25 +34,6 @@ async function authedFetch(url, opts = {}) {
   });
 }
 
-// Map of backend "hint_category" → display label rendered in the mystery
-// card's text-only hint area. Sync with HINT_CATEGORIES in
-// backend/chatController.js. Falls back to "Mystery" if backend returns
-// an unknown category.
-const CATEGORY_LABEL = {
-  mountain:  "Mountain",
-  beach:     "Coast",
-  desert:    "Desert",
-  forest:    "Forest",
-  lake:      "Lakes",
-  heritage:  "Heritage",
-  city:      "City",
-  pilgrim:   "Sacred",
-  wildlife:  "Wildlife",
-  adventure: "Adventure",
-};
-function labelForHint(category) {
-  return CATEGORY_LABEL[category] ?? "Mystery";
-}
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";

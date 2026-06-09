@@ -1124,6 +1124,27 @@ body.theme-light .poll-opt { background: rgba(11,14,21,0.04); }
 @media (max-width: 480px) {
   .stays-grid { grid-template-columns: 1fr; }
 }
+@media (max-width: 380px) {
+  /* Final tightening pass — every screen at iPhone SE / Galaxy A-class. */
+  .itin { padding: 14px; gap: 13px; }
+  .pass-l { padding: 16px; }
+  .itin-title { font-size: 36px !important; }
+  .hudmap { height: 170px; }
+  .tl-day { grid-template-columns: 32px 1fr; gap: 9px; }
+  .tl-node { width: 30px; height: 30px; font-size: 15px; }
+  .tl-body { padding: 13px 14px; }
+  .tl-title { font-size: 17px; }
+  .totals { padding: 14px; }
+  .grand-v { font-size: 26px; }
+  /* Welcome rail teasers narrower so two-and-a-half visible at 360 */
+  .teaser { width: 160px; padding: 13px; }
+  .teaser.vibe { width: 180px; }
+  .teaser-name { font-size: 24px; }
+  /* Budget modal hero */
+  .bm-budget-big { font-size: 38px; }
+  /* Drawer + concierge composer doesn't overflow */
+  .drawer-head, .drawer-body, .drawer-foot { padding-left: 16px; padding-right: 16px; }
+}
 
 /* ============================================================
    18. DRAWERS — Concierge + Trip chat (Stage 9)
