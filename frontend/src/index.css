@@ -1124,6 +1124,81 @@ body.theme-light .poll-opt { background: rgba(11,14,21,0.04); }
 @media (max-width: 480px) {
   .stays-grid { grid-template-columns: 1fr; }
 }
+/* ============================================================
+   20. LIGHT-THEME COMPAT SHIM (Stage 12)
+   Many older components (PollCard, PriceCard, RefineComposer,
+   WeatherCard, StaysSection, PackingChecklist, BookingLinks,
+   PhotoGallery, MessageBubble, QANotice, LockChip, CreatePoll modal,
+   header bar + composer footer + sidebar trip rows) still hardcode
+   Tailwind dark-only utility classes. Rewriting all of them would
+   touch 50+ sites. Instead, this block overrides each commonly-used
+   class for body.theme-light so the existing markup flips correctly.
+   ============================================================ */
+body.theme-light {
+  /* Text colours — slate scale → ink token scale */
+  & .text-slate-100 { color: var(--ink) !important; }
+  & .text-slate-200 { color: var(--ink) !important; }
+  & .text-slate-300 { color: var(--ink-soft) !important; }
+  & .text-slate-400 { color: var(--ink-soft) !important; }
+  & .text-slate-500 { color: var(--ink-dim) !important; }
+  & .text-slate-900 { color: var(--ink) !important; }   /* used on accent-bg buttons; ink already near-black */
+
+  /* Inverted text — when ink is on accent button it must stay legible */
+  & .accent-bg .text-slate-900,
+  & .btn-primary .text-slate-900 { color: #07090D !important; }
+
+  /* Background tints (white-on-dark → near-black-on-light) */
+  & .bg-white\/\[0\.02\]   { background-color: rgba(11,14,21,0.025) !important; }
+  & .bg-white\/\[0\.025\]  { background-color: rgba(11,14,21,0.03)  !important; }
+  & .bg-white\/\[0\.03\]   { background-color: rgba(11,14,21,0.04)  !important; }
+  & .bg-white\/\[0\.04\]   { background-color: rgba(11,14,21,0.05)  !important; }
+  & .bg-white\/\[0\.05\]   { background-color: rgba(11,14,21,0.06)  !important; }
+  & .bg-white\/\[0\.06\]   { background-color: rgba(11,14,21,0.07)  !important; }
+  & .bg-white\/\[0\.07\]   { background-color: rgba(11,14,21,0.08)  !important; }
+  & .bg-white\/\[0\.08\]   { background-color: rgba(11,14,21,0.09)  !important; }
+  & .bg-slate-900          { background-color: var(--panel)         !important; }
+  & .bg-slate-900\/80      { background-color: rgba(255,255,255,0.85) !important; }
+
+  /* Border tints */
+  & .border-white\/10      { border-color: rgba(11,14,21,0.10) !important; }
+  & .border-white\/20      { border-color: rgba(11,14,21,0.18) !important; }
+  & .border-white\/30      { border-color: rgba(11,14,21,0.25) !important; }
+  & .border-white\/\[0\.06\] { border-color: rgba(11,14,21,0.08) !important; }
+  & .border-white\/\[0\.08\] { border-color: rgba(11,14,21,0.10) !important; }
+
+  /* Hover overrides (because Tailwind generates :hover variants too) */
+  & .hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(11,14,21,0.05) !important; }
+  & .hover\:bg-white\/\[0\.05\]:hover { background-color: rgba(11,14,21,0.06) !important; }
+  & .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(11,14,21,0.07) !important; }
+  & .hover\:bg-white\/\[0\.08\]:hover { background-color: rgba(11,14,21,0.09) !important; }
+
+  /* Amber severity chips — keep readable on light */
+  & .bg-amber-400\/\[0\.06\] { background-color: rgba(180,121,0,0.10) !important; }
+  & .text-amber-100 { color: #6e4a00 !important; }
+  & .text-amber-200 { color: #7a5100 !important; }
+  & .text-amber-300 { color: #946400 !important; }
+
+  /* Emerald / success */
+  & .text-emerald-200 { color: #157f3f !important; }
+  & .text-emerald-300 { color: #1ea34a !important; }
+
+  /* Red / error */
+  & .text-red-200 { color: #b91c1c !important; }
+  & .text-red-300 { color: #c0202b !important; }
+  & .bg-red-400\/5         { background-color: rgba(220,38,38,0.06) !important; }
+  & .bg-red-400\/\[0\.08\] { background-color: rgba(220,38,38,0.08) !important; }
+  & .bg-red-400\/\[0\.16\] { background-color: rgba(220,38,38,0.14) !important; }
+
+  /* Borders for the same status chips */
+  & .border-red-400\/30   { border-color: rgba(220,38,38,0.35) !important; }
+  & .border-amber-400\/30 { border-color: rgba(180,121,0,0.35) !important; }
+  & .border-emerald-400\/30 { border-color: rgba(34,150,72,0.35) !important; }
+
+  /* Placeholder colour */
+  & .placeholder\:text-slate-500::placeholder { color: var(--ink-dim) !important; }
+  & .placeholder\:text-slate-400::placeholder { color: var(--ink-dim) !important; }
+}
+
 @media (max-width: 380px) {
   /* Final tightening pass — every screen at iPhone SE / Galaxy A-class. */
   .itin { padding: 14px; gap: 13px; }
