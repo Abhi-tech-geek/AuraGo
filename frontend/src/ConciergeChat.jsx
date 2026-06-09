@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, X, Send, Loader2, Sparkles } from "lucide-react";
+import { Bot, X, Send, Loader2, Utensils, Shirt, Camera, MapPin } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
-// Floating "Ask AuraGo" chat. Opens a small panel that's contextual to a
-// destination — answers follow-up questions like "best food to try?",
-// "how cold will it actually be?", "kid-friendly activities?".
+// Floating "Ask AuraGo" chat. Opens a drawer that's contextual to a
+// destination — answers follow-up questions about food, weather, kid-friendly
+// spots, hidden gems nearby, etc. Now uses the Terminal drawer styling +
+// 4 quick-topic cards on the empty state + animated typing indicator.
+const TOPICS = [
+  { key: "food",    label: "Best food to try",        icon: Utensils, q: "What are the must-try local dishes here?" },
+  { key: "wear",    label: "What should I wear?",     icon: Shirt,    q: "What should I pack and wear for this trip?" },
+  { key: "photo",   label: "Best photo spots",        icon: Camera,   q: "Where are the best photo spots locals love?" },
+  { key: "nearby",  label: "Hidden gems nearby",      icon: MapPin,   q: "Any hidden gems within an hour of here?" },
+];
+
 export default function ConciergeChat({ context }) {
-  const [open, setOpen]       = useState(false);
-  const [input, setInput]     = useState("");
-  const [busy, setBusy]       = useState(false);
-  const [thread, setThread]   = useState([]);
+  const [open, setOpen]     = useState(false);
+  const [input, setInput]   = useState("");
+  const [busy, setBusy]     = useState(false);
+  const [thread, setThread] = useState([]);
   const scrollRef = useRef(null);
 
-  // Re-fresh greeting when destination changes
+  // Reset greeting whenever destination changes.
   useEffect(() => {
     if (!context?.destination) return;
     setThread([{
@@ -27,10 +35,10 @@ export default function ConciergeChat({ context }) {
     });
   }, [thread.length, busy, open]);
 
-  const send = async () => {
-    const q = input.trim();
+  const ask = async (questionText) => {
+    const q = (questionText ?? input).trim();
     if (!q || busy) return;
-    setInput("");
+    if (!questionText) setInput("");
     setThread((t) => [...t, { role: "user", content: q }]);
     setBusy(true);
     try {
@@ -66,93 +74,122 @@ export default function ConciergeChat({ context }) {
     }
   };
 
-  // Hide entirely when there's no context (no card open)
   if (!context?.destination) return null;
+
+  // First-turn detection: show topic cards if there's only the greeting.
+  const fresh = thread.length === 1 && thread[0].role === "assistant";
 
   return (
     <>
-      {/* FAB */}
+      {/* Floating FAB */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
           aria-label="Ask AuraGo concierge"
-          className="accent-bg accent-glow pulse-ring fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full text-slate-900 transition hover:scale-105 sm:right-6 sm:h-14 sm:w-14"
-          style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
+          className="fab fab-bot"
+          style={{
+            position: "fixed",
+            right: 20,
+            bottom: "calc(6.5rem + env(safe-area-inset-bottom))",
+            zIndex: 40,
+          }}
         >
+          <span className="fab-pulse" />
           <Bot size={20} />
         </button>
       )}
 
-      {/* Panel */}
+      {/* Drawer */}
       {open && (
-        <div
-          className="glass-strong fixed right-2 z-40 flex h-[480px] max-h-[70vh] w-[min(360px,calc(100vw-1rem))] flex-col rounded-2xl border border-white/10 sm:right-6"
-          style={{ bottom: "calc(6.5rem + env(safe-area-inset-bottom))" }}
-        >
-          {/* header */}
-          <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="accent-bg accent-glow grid h-7 w-7 place-items-center rounded-lg">
-                <Bot size={14} className="text-slate-900" />
-              </div>
-              <div>
-                <div className="text-[13px] font-medium text-slate-100">AuraGo concierge</div>
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">
-                  {context.destination}
+        <div className="drawer-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="drawer">
+            <div className="drawer-head">
+              <div className="flex items-center gap-3">
+                <div className="drawer-ico"><Bot size={18} /></div>
+                <div>
+                  <div className="serif" style={{ fontSize: 20, lineHeight: 1 }}>Concierge</div>
+                  <div className="trip-sub" style={{ marginTop: 4 }}>{context.destination}</div>
                 </div>
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                className="btn-icon"
+                style={{ width: 34, height: 34 }}
+                aria-label="Close concierge"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div ref={scrollRef} className="drawer-body">
+              {fresh && (
+                <div className="cc-topics">
+                  {TOPICS.map((t) => (
+                    <button
+                      key={t.key}
+                      className="cc-topic"
+                      onClick={() => ask(t.q)}
+                      disabled={busy}
+                    >
+                      <t.icon size={15} className="accent" />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="cc-msgs">
+                {thread.map((m, i) => (
+                  <div key={i} className={"cc-msg " + (m.role === "user" ? "me" : "bot")}>
+                    <div className="cc-ava">
+                      {m.role === "user" ? <span style={{ fontFamily: "var(--mono)", fontSize: 11 }}>YOU</span> : <Bot size={14} />}
+                    </div>
+                    <div className="cc-bubble">
+                      <p style={{ whiteSpace: "pre-wrap" }}>{m.content}</p>
+                    </div>
+                  </div>
+                ))}
+                {busy && (
+                  <div className="cc-msg bot">
+                    <div className="cc-ava"><Bot size={14} /></div>
+                    <div className="cc-bubble">
+                      <span className="cc-typing"><span /><span /><span /></span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="rounded-lg border border-white/10 p-1.5 text-slate-400 hover:bg-white/[0.06]"
-              aria-label="Close concierge"
-            >
-              <X size={14} />
-            </button>
-          </div>
 
-          {/* feed */}
-          <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
-            {thread.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-snug ${
-                  m.role === "user"
-                    ? "border border-white/10 bg-white/[0.07]"
-                    : "border border-white/[0.06] bg-white/[0.025]"
-                }`}>
-                  {m.role === "assistant" && (
-                    <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-slate-500">
-                      <Sparkles size={9} className="accent-text" /> AuraGo
-                    </div>
-                  )}
-                  <p className="whitespace-pre-wrap text-slate-100">{m.content}</p>
-                </div>
+            <div className="drawer-foot">
+              <div className="composer-input" style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "5px 5px 5px 12px",
+                borderRadius: "var(--r)",
+                border: "1px solid var(--line)",
+                background: "rgba(0,0,0,0.32)",
+              }}>
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") ask(); }}
+                  placeholder="Ask anything about this trip…"
+                  style={{
+                    flex: 1, background: "transparent", border: "none",
+                    outline: "none", color: "var(--ink)",
+                    fontFamily: "var(--sans)", fontSize: 14, padding: "9px 0",
+                  }}
+                />
+                <button
+                  onClick={() => ask()}
+                  disabled={!input.trim() || busy}
+                  className="btn btn-primary"
+                  style={{ width: 38, height: 38, padding: 0, borderRadius: 8 }}
+                  aria-label="Send"
+                >
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                </button>
               </div>
-            ))}
-            {busy && (
-              <div className="flex items-center gap-2 px-1 text-[12px] text-slate-400">
-                <Loader2 size={12} className="animate-spin accent-text" />
-                Thinking…
-              </div>
-            )}
-          </div>
-
-          {/* composer */}
-          <div className="flex items-center gap-2 border-t border-white/[0.06] p-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") send(); }}
-              placeholder="Ask anything about this trip…"
-              className="flex-1 rounded-xl bg-white/[0.04] px-3 py-2 text-[13px] placeholder:text-slate-500 focus:outline-none"
-            />
-            <button
-              onClick={send}
-              disabled={!input.trim() || busy}
-              className="accent-bg accent-glow grid h-9 w-9 place-items-center rounded-xl disabled:opacity-50"
-            >
-              <Send size={14} className="text-slate-900" />
-            </button>
+            </div>
           </div>
         </div>
       )}

@@ -329,33 +329,37 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
           </p>
         </div>
 
-        {/* budget slider */}
-        <div className="mb-5">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="text-[11px] uppercase tracking-wider text-slate-400">
+        {/* budget hero readout — big amber numeral + slider */}
+        <div className="mb-5 bm-budget">
+          <div className="flex items-center justify-between">
+            <label className="text-[10.5px] uppercase tracking-[0.14em] text-[color:var(--ink-dim)] mono">
               Total budget
             </label>
-            <span className="text-lg font-semibold">₹{fmtINR(budget)}</span>
+            {hint.severity === "very_tight" && (
+              <span className="sev sev-bad">VERY TIGHT</span>
+            )}
+            {hint.severity === "tight" && (
+              <span className="sev sev-warn">TIGHT</span>
+            )}
           </div>
+          <div className="bm-budget-big">₹{fmtINR(budget)}</div>
           <input
             type="range"
             min={5000} max={500000} step={1000}
             value={budget}
             onChange={(e) => setBudget(+e.target.value)}
-            className="w-full"
+            className="range w-full"
+            style={{ "--fill": `${Math.min(100, Math.max(0, (budget / 500000) * 100))}%` }}
           />
-          <div className="mt-2 flex justify-between text-[10px] text-slate-500">
-            <span>₹5k</span><span>₹50k</span><span>₹2L</span><span>₹5L</span>
+          <div className="bm-range-ends">
+            <span>₹5k</span><span>₹{fmtINR(budget)}</span><span>₹5L</span>
           </div>
-
-          {/* Hint copy — phrasing depends on whether it's a solo trip */}
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-[11.5px] text-[color:var(--ink-soft)]">
             {hint.isSolo
               ? <>≈ ₹{fmtINR(hint.perPersonPerDay)}/day · {hint.label}</>
-              : <>≈ ₹{fmtINR(hint.perPerson)} per person · ₹{fmtINR(hint.perPersonPerDay)}/person/day · {hint.label}</>}
+              : <>≈ ₹{fmtINR(hint.perPerson)} per person · ₹{fmtINR(hint.perPersonPerDay)}/p/day · {hint.label}</>}
           </p>
 
-          {/* Severity warning chip */}
           {hint.severity === "very_tight" && (
             <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/[0.06] p-2.5 text-[12px] text-amber-100">
               <span className="text-base leading-none">⚠️</span>
@@ -391,7 +395,7 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
         <div className="flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 rounded-xl border border-white/10 py-3 text-sm hover:bg-white/[0.05]"
+            className="btn btn-ghost flex-1"
           >
             Cancel
           </button>
@@ -409,13 +413,18 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
               universal_access: universalAccess,
               route_stops: multiStop ? normalizeStops(stopsText) : [],
             })}
-            className="accent-bg accent-glow flex-1 rounded-xl py-3 text-sm font-semibold text-slate-900"
+            className="btn btn-primary bm-plan flex-1"
           >
-            {multiStop && normalizeStops(stopsText).length >= 2
-              ? `Plan my ${normalizeStops(stopsText).length}-stop route →`
-              : (showDestField && destination.trim())
-                ? `Plan ${destination.trim()} →`
-                : "Find my 8 options →"}
+            <span className="btn-cta">
+              {multiStop && normalizeStops(stopsText).length >= 2
+                ? `Plan my route →`
+                : (showDestField && destination.trim())
+                  ? `Plan ${destination.trim()} →`
+                  : "Find my 8 options →"}
+            </span>
+            <span className="bm-plan-meta">
+              {partySize} {partySize === 1 ? "pax" : "pax"} · {days}d · ₹{fmtINR(Math.round(budget / 1000))}k
+            </span>
           </button>
         </div>
       </div>

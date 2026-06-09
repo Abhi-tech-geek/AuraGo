@@ -2479,6 +2479,17 @@ function ChatDrawer({ open, onClose, sessionId, messages, currentUserId }) {
     }
   };
 
+  // Distinct authors who've ever posted in this chat — fed into a
+  // tiny "members" pill row at the top of the drawer with online dots.
+  const authors = Array.from(new Set(chatMsgs.map((m) => m.author_id).filter(Boolean)));
+
+  const fmtTime = (iso) => {
+    if (!iso) return "";
+    try {
+      return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    } catch { return ""; }
+  };
+
   return (
     <AnimatePresence>
       {open && (
@@ -2486,61 +2497,110 @@ function ChatDrawer({ open, onClose, sessionId, messages, currentUserId }) {
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+            className="drawer-backdrop"
+            style={{ background: "var(--backdrop)" }}
           />
           <motion.aside
             initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 220, damping: 28 }}
-            className="glass-strong fixed right-0 top-0 z-50 flex h-[100dvh] w-full max-w-md flex-col border-l border-white/[0.08]"
+            className="drawer"
+            style={{ position: "fixed", right: 0, top: 0, zIndex: 160 }}
           >
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare size={14} className="accent-text" />
-                <h3 className="text-sm font-medium">Trip chat</h3>
+            <div className="drawer-head">
+              <div className="flex items-center gap-3">
+                <div className="drawer-ico"><MessageSquare size={18} /></div>
+                <div>
+                  <div className="serif" style={{ fontSize: 20, lineHeight: 1 }}>Trip chat</div>
+                  <div className="trip-sub" style={{ marginTop: 4 }}>
+                    {authors.length} {authors.length === 1 ? "member" : "members"}
+                  </div>
+                </div>
               </div>
               <button
                 onClick={onClose}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+                className="btn-icon"
+                style={{ width: 34, height: 34 }}
                 aria-label="Close chat"
               >
-                <X size={16} />
+                <X size={14} />
               </button>
             </div>
-            <div ref={scroller} className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
-              {chatMsgs.length === 0 && (
-                <div className="grid h-full place-items-center text-center text-[12.5px] text-slate-500">
-                  <div>
-                    <div className="mb-2 text-2xl">💬</div>
-                    No messages yet. <br/> Side-chat with your trip crew here.
-                  </div>
+
+            <div ref={scroller} className="drawer-body">
+              {authors.length > 0 && (
+                <div className="chat-members">
+                  {authors.slice(0, 6).map((id) => {
+                    const initials = String(id).slice(0, 2).toUpperCase();
+                    const isMe = id === currentUserId;
+                    return (
+                      <span key={id} className="pill chat-mem">
+                        <span className="avatar" style={{ width: 22, height: 22, fontSize: 10 }}>{initials}</span>
+                        {isMe ? "You" : "Member"}
+                        <span className="chat-online" />
+                      </span>
+                    );
+                  })}
                 </div>
               )}
-              {chatMsgs.map((m) => {
-                const mine = m.author_id === currentUserId;
-                return (
-                  <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-[13.5px] ${
-                      mine ? "accent-soft-bg accent-text" : "border border-white/10 bg-white/[0.03] text-slate-200"
-                    }`}>
-                      {m.content}
-                    </div>
+
+              {chatMsgs.length === 0 ? (
+                <div className="grid h-full place-items-center text-center" style={{ color: "var(--ink-dim)", fontSize: 12.5 }}>
+                  <div>
+                    <MessageSquare size={28} className="accent-text mx-auto mb-2" />
+                    No messages yet.<br />Side-chat with your trip crew here.
                   </div>
-                );
-              })}
+                </div>
+              ) : (
+                <div className="chat-msgs">
+                  {chatMsgs.map((m, i) => {
+                    const mine = m.author_id === currentUserId;
+                    const prevSameAuthor = i > 0 && chatMsgs[i - 1].author_id === m.author_id;
+                    return (
+                      <div key={m.id} className={"chat-msg " + (mine ? "mine" : "")}>
+                        {!mine && !prevSameAuthor && (
+                          <div className="chat-who">Member</div>
+                        )}
+                        <div className="chat-bubble">{m.content}</div>
+                        <div className="chat-time">{fmtTime(m.created_at)}</div>
+                      </div>
+                    );
+                  })}
+                  {busy && (
+                    <div className="chat-msg mine">
+                      <div className="chat-bubble">
+                        <span className="cc-typing"><span /><span /><span /></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="border-t border-white/[0.06] px-3 py-3">
-              <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+
+            <div className="drawer-foot">
+              <div className="composer-input" style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "5px 5px 5px 12px",
+                borderRadius: "var(--r)",
+                border: "1px solid var(--line)",
+                background: "rgba(0,0,0,0.32)",
+              }}>
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") send(); }}
                   placeholder="Message your trip crew…"
                   disabled={busy}
-                  className="flex-1 bg-transparent text-sm focus:outline-none"
+                  style={{
+                    flex: 1, background: "transparent", border: "none",
+                    outline: "none", color: "var(--ink)",
+                    fontFamily: "var(--sans)", fontSize: 14, padding: "9px 0",
+                  }}
                 />
                 <button
                   onClick={send} disabled={busy || !text.trim()}
-                  className="accent-bg accent-glow grid h-8 w-8 place-items-center rounded-lg text-slate-900 disabled:opacity-50"
+                  className="btn btn-primary"
+                  style={{ width: 38, height: 38, padding: 0, borderRadius: 8 }}
+                  aria-label="Send"
                 >
                   {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                 </button>
