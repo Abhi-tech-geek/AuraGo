@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Accessibility, CalendarDays, Globe, Route as RouteIcon } from "lucide-react";
 import { budgetHintLabel, fmtINR } from "./lib/tripPlanning";
 import { citiesFor } from "./lib/cities";
+import CountUp from "./lib/CountUp";
 
 // Convert textarea / array → cleaned ordered list of stop strings.
 function normalizeStops(input) {
@@ -96,7 +98,23 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
       className="aura-backdrop"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
     >
-      <div className="aura-modal glass-strong rounded-3xl p-5 sm:p-8">
+      <motion.div
+        className="aura-modal glass-strong rounded-3xl p-5 sm:p-8"
+        drag="y"
+        dragDirectionLock
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.4 }}
+        onDragEnd={(_, info) => {
+          // Swipe down far/fast enough → dismiss (mobile bottom-sheet gesture).
+          if (info.offset.y > 120 || info.velocity.y > 700) onClose?.();
+        }}
+      >
+        {/* Drag handle — only meaningful on the mobile bottom-sheet layout */}
+        <div
+          className="mx-auto mb-3 h-1.5 w-10 rounded-full sm:hidden"
+          style={{ background: "var(--line-2)" }}
+          aria-hidden="true"
+        />
         <div className="mb-5">
           {showDestField ? (
             <>
@@ -336,7 +354,9 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
               <span className="sev sev-warn">TIGHT</span>
             )}
           </div>
-          <div className="bm-budget-big">₹{fmtINR(budget)}</div>
+          <div className="bm-budget-big">
+            <CountUp value={budget} format={(n) => `₹${fmtINR(n)}`} />
+          </div>
           <input
             type="range"
             min={5000} max={500000} step={1000}
@@ -421,7 +441,7 @@ export default function BudgetModal({ open, initial, destinationHint, composerMo
             </span>
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -39,6 +39,8 @@ import BudgetModal from "./BudgetModal";
 import ConciergeChat from "./ConciergeChat";
 import { citiesFor } from "./lib/cities";
 import { PLACE_TEASERS, VIBE_TEASERS } from "./lib/teasers";
+import { toast } from "./Toast";
+import CountUp from "./lib/CountUp";
 import {
   computeRoutes, computeBudgetBreakdown, fmtINR, promptFromPrefs,
   KNOWN_DESTINATIONS,
@@ -484,12 +486,7 @@ export default function ChatInterface({
               })}
             </AnimatePresence>
 
-            {sending && (
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <Loader2 size={14} className="animate-spin accent-text" />
-                Checking live data (Serper + reviews)…
-              </div>
-            )}
+            {sending && <SkeletonBoard />}
             {/* Auto-scroll sentinel */}
             <div ref={bottomRef} aria-hidden="true" />
           </div>
@@ -868,6 +865,51 @@ function LockChip({ message }) {
 // =====================================================================
 // MysteryDeck
 // =====================================================================
+// ---------- Skeleton board shown while a deck/itinerary generates ----------
+// Mimics the departures-board shape so the layout doesn't jump when the
+// real rows arrive. Cycles a status line through the actual pipeline steps
+// so the 12-15s wait feels like progress, not a hang.
+const SKELETON_STEPS = [
+  "Reading your brief…",
+  "Scanning hidden gems…",
+  "Cross-checking live advisories…",
+  "Pricing stays + transport…",
+  "Building day-by-day plans…",
+  "Almost there…",
+];
+function SkeletonBoard() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, SKELETON_STEPS.length - 1)), 2600);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="board glass-strong hud" aria-busy="true">
+      <div className="board-top">
+        <div className="board-id mono"><span className="board-led" /> AURAGO&nbsp;&nbsp;DEPARTURES</div>
+        <div className="board-clock mono">UPDATING…</div>
+      </div>
+      <div className="board-rows">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div className="sk-board-row" key={i} style={{ opacity: 1 - i * 0.07 }}>
+            <div className="sk sk-line" style={{ width: 18 }} />
+            <div className="sk sk-line" style={{ width: `${55 + (i % 3) * 12}%` }} />
+            <div className="sk sk-line" style={{ width: 34, height: 20 }} />
+            <div className="sk sk-line" style={{ width: 52 }} />
+          </div>
+        ))}
+      </div>
+      <div className="board-foot">
+        <span className="mono" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <Loader2 size={12} className="animate-spin" />
+          {SKELETON_STEPS[step]}
+        </span>
+        <span className="board-foot-r mono hide-sm">LIVE-CHECKING</span>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Mystery deck → split-flap departures board ----------
 // Each card renders as a row in a board frame. The hint_category gets
 // scrambled into target letters using FlapTile components for the
@@ -992,7 +1034,9 @@ function BoardRow({ card, ord, active, onOpen }) {
         <span className="brow-blurb">{card.blurb}</span>
       </span>
       <span className="brow-vibe mono hide-sm">{card.vibe}</span>
-      <span className="brow-score display">{(card.ai_value_score ?? 0).toFixed(1)}</span>
+      <span className="brow-score display">
+        <CountUp value={card.ai_value_score ?? 0} decimals={1} duration={800} />
+      </span>
       <span className="brow-cost mono hide-xs">~₹{fmtINR(card.est_cost_inr)}</span>
       <span className="brow-go">
         <span className="mono">BOARD</span>
@@ -1153,7 +1197,12 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         if (data?.tripId) setTripId(data.tripId);
         // Tell the parent so the sidebar shows the destination name immediately
         if (p.destination) onLocked?.(p.destination);
+        toast.success(`${p.destination} locked in — share link is ready.`);
+      } else {
+        toast.error("Couldn't lock this trip. Try again.");
       }
+    } catch {
+      toast.error("Couldn't lock this trip. Try again.");
     } finally { setLocking(false); }
   };
 
@@ -1185,6 +1234,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       } else {
         await navigator.clipboard.writeText(url);
         setInviteCopied(true);
+        toast.success("Invite link copied — share it with your crew.");
         window.setTimeout(() => setInviteCopied(false), 2000);
       }
     } catch {
@@ -1194,6 +1244,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         ta.select(); document.execCommand("copy");
         document.body.removeChild(ta);
         setInviteCopied(true);
+        toast.success("Invite link copied — share it with your crew.");
         window.setTimeout(() => setInviteCopied(false), 2000);
       } catch {}
     }
@@ -1208,6 +1259,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       } else {
         await navigator.clipboard.writeText(url);
         setShareCopied(true);
+        toast.success("Share link copied — anyone can view this trip.");
         window.setTimeout(() => setShareCopied(false), 2000);
       }
     } catch {
@@ -1218,6 +1270,7 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
         ta.select(); document.execCommand("copy");
         document.body.removeChild(ta);
         setShareCopied(true);
+        toast.success("Share link copied — anyone can view this trip.");
         window.setTimeout(() => setShareCopied(false), 2000);
       } catch {}
     }
@@ -1300,6 +1353,24 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
           <div className="stub-barcode" />
         </div>
       </div>
+
+      {/* ============ WHY THIS PICK ============ */}
+      {p.why_match && (
+        <div
+          className="flex items-start gap-2 rounded-xl px-4 py-3"
+          style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }}
+        >
+          <Sparkles size={15} className="accent-text mt-0.5 shrink-0" />
+          <div>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)" }}>
+              Why AuraGo picked this
+            </span>
+            <p className="mt-1 text-[13.5px] leading-relaxed" style={{ color: "var(--ink)" }}>
+              {p.why_match}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ============ HUD ROUTE MAP ============ */}
       <HudMap stops={routeStopsForMap} dest={p.destination} mapsHref={`https://www.google.com/maps?q=${encodeURIComponent(p.destination ?? "")}`} />
@@ -1579,7 +1650,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       </div>
       <div className="accent-soft-bg mt-2 flex items-center justify-between rounded-lg p-3 text-sm">
         <span className="font-medium">Grand total</span>
-        <span className="serif text-xl">₹{fmtINR(grandTotal)}</span>
+        <span className="serif text-xl">
+          <CountUp value={grandTotal} format={(n) => `₹${fmtINR(n)}`} duration={800} />
+        </span>
       </div>
 
       {/* Conversational refinement — chips + free-text */}
@@ -2186,7 +2259,7 @@ function CreatePoll({ sessionId, onCreated }) {
       onCreated?.();
     } catch (e) {
       console.error("poll create failed", e);
-      alert("Couldn't create the poll. Try again.");
+      toast.error("Couldn't create the poll. Try again.");
     } finally {
       setBusy(false);
     }
@@ -2299,7 +2372,7 @@ function RefineComposer({ sessionId, itineraryMessageId, onRefining, disabled })
       setText("");
     } catch (e) {
       console.error("refine failed", e);
-      alert("Refine failed. Try again in a moment.");
+      toast.error("Refine failed. Try again in a moment.");
     } finally {
       setBusy(false);
       onRefining?.(false);

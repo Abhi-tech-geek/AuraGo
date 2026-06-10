@@ -6,6 +6,7 @@ import Sidebar, { MAX_SESSIONS } from "./Sidebar";
 import ChatInterface from "./ChatInterface.jsx";
 import TripsCompareModal from "./TripsCompareModal";
 import PublicTripView from "./PublicTripView";
+import { toast } from "./Toast";
 
 const DEFAULT_PREFS = {
   mode: "elite",
@@ -274,7 +275,7 @@ function AuthedApp() {
   const handleNewSession = useCallback(async () => {
     if (!authSession?.user) return;
     if (sessions.length >= MAX_SESSIONS) {
-      alert(`You already have ${MAX_SESSIONS} trips. Please delete one first.`);
+      toast.info(`You already have ${MAX_SESSIONS} trips. Delete one to start another.`);
       return;
     }
     try {
@@ -293,7 +294,7 @@ function AuthedApp() {
       setPrefs((p) => ({ ...p, start_date: "", route_stops: [] }));
     } catch (e) {
       console.error("create session failed", e);
-      alert(e.message ?? "Could not create trip.");
+      toast.error(e.message ?? "Could not create trip.");
     }
   }, [authSession, sessions.length, prefs]);
 
@@ -311,7 +312,7 @@ function AuthedApp() {
       });
     } catch (e) {
       console.error("delete session failed", e);
-      alert(e.message ?? "Could not delete trip.");
+      toast.error(e.message ?? "Could not delete trip.");
     }
   }, [activeId]);
 

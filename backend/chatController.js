@@ -223,6 +223,10 @@ For each destination give:
 - a one-line teaser that does NOT mention the destination name
 - a "hint_category" — pick ONE from: ${HINT_CATEGORIES.join(", ")}
   (pick the single best fit for the place's primary character)
+- a "why_match" — ONE concrete sentence (<=130 chars) explaining why THIS
+  place fits THIS specific traveller (reference their budget, days, party
+  size, season, or stated vibe). Be specific, not generic. The
+  destination name MAY be used here.
 
 Return JSON only:
 {
@@ -230,7 +234,8 @@ Return JSON only:
    {"destination":"<name, City/Region, Country>", "vibe":"<2-3 words>",
     "ai_value_score": <number>, "est_cost_inr": <int>,
     "blurb":"<<=120 chars, no destination name>>",
-    "hint_category":"<one of the categories>"}
+    "hint_category":"<one of the categories>",
+    "why_match":"<one specific sentence>"}
  ]
 }`;
   const userMsg = `Constraints: ${JSON.stringify(intent)}`;
@@ -410,6 +415,7 @@ export async function chatTurn(req, res) {
       blurb: c.blurb,
       hint_category: c.hint_category ?? "city",
       hint_emoji: c.hint_emoji, // back-compat for older clients
+      why_match: c.why_match ?? null,
       accessibility_ok: c.accessibility_ok,
       _destination: c.destination,
       _summary:     c._summary,
@@ -443,7 +449,7 @@ export async function chatTurn(req, res) {
 
 // Shared helper — builds an itinerary payload for one destination.
 // Used by both expandCard and directTrip.
-async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value_score, card_id, intent, startDate }) {
+async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value_score, card_id, intent, startDate, why_match }) {
   const fresh = await ragVerify(
     { destination, vibe, ai_value_score, est_cost_inr },
     intent
@@ -618,6 +624,7 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
     similar_destinations: plan.similar_destinations ?? [],
     photos: photoList,
     route_stops: isMultiStop ? routeStops : [],
+    why_match: why_match ?? null,
   };
 }
 
@@ -668,6 +675,7 @@ export async function expandCard(req, res) {
       card_id: card.id,
       intent,
       startDate,
+      why_match: card.why_match,
     });
 
     const { data: itinMsg, error: itinErr } = await supabase.from("messages").insert({
@@ -1162,6 +1170,7 @@ export async function lockTrip(req, res) {
         rag_summary: p.rag_summary,
         hazard: p.hazard,
         route_stops: p.route_stops ?? [],
+        why_match: p.why_match ?? null,
       },
       accessibility_notes: p.accessibility_notes,
       rag_citations: p.citations, status: "locked", locked_by: userId,

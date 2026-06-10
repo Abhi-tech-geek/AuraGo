@@ -225,6 +225,24 @@ function PublicTrip({ trip }) {
             </div>
           )}
 
+          {/* Why this pick */}
+          {it.why_match && (
+            <div
+              className="flex items-start gap-2 rounded-xl px-4 py-3"
+              style={{ background: "var(--accent-soft)", border: "1px solid var(--accent-line)" }}
+            >
+              <Sparkles size={15} className="accent mt-0.5 shrink-0" />
+              <div>
+                <span className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  Why AuraGo picked this
+                </span>
+                <p className="mt-1 text-[13.5px] leading-relaxed" style={{ color: "var(--ink)" }}>
+                  {it.why_match}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* HUD MAP */}
           <HudMap stops={mapStops} dest={trip.destination} mapsHref={mapsHref} />
 

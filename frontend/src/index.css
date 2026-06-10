@@ -1209,6 +1209,33 @@ body.theme-light {
   & .placeholder\:text-slate-400::placeholder { color: var(--ink-dim) !important; }
 }
 
+/* ============================================================
+   21. SKELETON LOADERS (Stage: shimmer)
+   ============================================================ */
+.sk {
+  position: relative; overflow: hidden;
+  background: var(--panel-2); border-radius: var(--r-sm);
+}
+.sk::after {
+  content: ""; position: absolute; inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(var(--accent-rgb), 0.10) 50%,
+    transparent 100%);
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes sk-shimmer { 100% { transform: translateX(100%); } }
+.sk-line { height: 12px; border-radius: 4px; }
+.sk-board-row {
+  display: grid; grid-template-columns: 26px 1fr 50px 66px;
+  gap: 12px; align-items: center;
+  padding: 13px 6px; border-top: 1px solid var(--line);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sk::after { animation: none; opacity: 0.5; }
+}
+
 @media (max-width: 380px) {
   /* Final tightening pass — every screen at iPhone SE / Galaxy A-class. */
   .itin { padding: 14px; gap: 13px; }
