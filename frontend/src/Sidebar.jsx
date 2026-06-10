@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, X, Sparkles, LogOut, BarChart3, PanelLeftClose, Sun, Moon } from "lucide-react";
+import { Plus, Trash2, X, Sparkles, LogOut, BarChart3, PanelLeftClose, Sun, Moon, HelpCircle } from "lucide-react";
 
 const MAX_SESSIONS = 5;
 
@@ -18,6 +18,7 @@ export default function Sidebar({
   onTogglePin,
   theme,
   onToggleTheme,
+  onOpenTour,
 }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const atLimit = sessions.length >= MAX_SESSIONS;
@@ -188,6 +189,14 @@ export default function Sidebar({
               className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-2 text-xs text-slate-300 hover:bg-white/[0.06]"
             >
               <LogOut size={12} /> Sign out
+            </button>
+            <button
+              onClick={onOpenTour}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-[var(--accent)]"
+              title="How AuraGo works"
+              aria-label="Open guided tour"
+            >
+              <HelpCircle size={13} />
             </button>
             <button
               onClick={onToggleTheme}

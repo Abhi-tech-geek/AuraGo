@@ -261,7 +261,10 @@ body.theme-light .btn-ghost:hover { background: rgba(11,14,21,0.08); }
 .btn-icon {
   width: 40px; height: 40px; padding: 0; border-radius: var(--r-sm);
   background: rgba(255,255,255,0.04); border: 1px solid var(--line);
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 0; flex: none;
 }
+.btn-icon > svg { display: block; }
 body.theme-light .btn-icon { background: rgba(11,14,21,0.04); }
 .btn-icon:hover { background: rgba(255,255,255,0.09); transform: translateY(-1px); }
 body.theme-light .btn-icon:hover { background: rgba(11,14,21,0.10); }

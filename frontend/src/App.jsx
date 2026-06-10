@@ -7,6 +7,7 @@ import ChatInterface from "./ChatInterface.jsx";
 import TripsCompareModal from "./TripsCompareModal";
 import PublicTripView from "./PublicTripView";
 import { toast } from "./Toast";
+import Onboarding, { hasSeenOnboarding } from "./Onboarding";
 
 const DEFAULT_PREFS = {
   mode: "elite",
@@ -102,8 +103,17 @@ function AuthedApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarPinned, setSidebarPinned] = useState(loadSidebarPinned);
   const [compareOpen, setCompareOpen] = useState(false);
+  const [tourOpen, setTourOpen]       = useState(false);
   // Captured once at mount so Auth flow doesn't lose it on redirects.
   const [pendingInviteId] = useState(() => inviteSessionIdFromUrl());
+
+  // Show the first-run tour once a user is authenticated and hasn't seen it.
+  useEffect(() => {
+    if (authSession?.user && !hasSeenOnboarding()) {
+      const t = setTimeout(() => setTourOpen(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, [authSession]);
 
   // Apply theme + mode body classes — drives every CSS variable in index.css.
   useEffect(() => {
@@ -365,6 +375,7 @@ function AuthedApp() {
         onTogglePin={() => setSidebarPinned((p) => !p)}
         theme={theme}
         onToggleTheme={() => setTheme((t) => t === "light" ? "dark" : "light")}
+        onOpenTour={() => setTourOpen(true)}
       />
       <div className={`transition-all duration-300 ease-out ${sidebarPinned ? "md:pl-72" : "md:pl-0"}`}>
         <ChatInterface
@@ -392,6 +403,7 @@ function AuthedApp() {
         onClose={() => setCompareOpen(false)}
         userId={authSession.user.id}
       />
+      <Onboarding open={tourOpen} onClose={() => setTourOpen(false)} />
     </div>
   );
 }
