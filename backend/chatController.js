@@ -202,16 +202,23 @@ for SE Asia avoid Bali / Phuket). Suggest places a well-travelled
 friend would recommend over a guidebook — small towns, off-season
 spots, second cities, untouched coastlines, regional cultural pockets.
 
-BUDGET REALISM — VERY IMPORTANT:
+BUDGET — USE IT, DON'T UNDERSHOOT (VERY IMPORTANT):
 Total budget is ₹${intent.budget_inr} for ${intent.party_size} ${intent.party_size === 1 ? "person" : "people"} over ${intent.days ?? 4} days.
-This budget covers EVERYTHING the user pays for the trip: round-trip
-transport from their starting city + stays + food + activities + buffer.
-"est_cost_inr" you return = stay + food + activities ONLY (NOT transport),
-and it MUST be small enough that the user's transport from their origin
-also fits inside the total budget. Roughly: for nearby destinations leave
-≥ 25% of total for transport; for far/international leave ≥ 45%.
-Never suggest a place that obviously can't be done inside the total — the
-user feels let down. Prefer destinations where the maths comfortably works.
+This covers EVERYTHING: round-trip transport + stays + food + activities + buffer.
+"est_cost_inr" you return = stay + food + activities ONLY (NOT transport).
+
+Size est_cost_inr to actually USE the budget — give the traveller nicer
+stays, better food and more activities rather than the rock-bottom option.
+Target: est_cost_inr should land around 60-75% of the total budget after
+leaving room for transport. Concretely, assume transport is roughly:
+  - nearby/domestic (under ~700 km): ~15-25% of total
+  - far domestic (700-1800 km): ~25-35% of total
+  - international: ~40-50% of total
+So for a ₹${intent.budget_inr} budget, a nearby pick's est_cost_inr should be
+roughly ₹${Math.round(intent.budget_inr * 0.65).toLocaleString("en-IN")}
+(NOT a third of that). Do NOT return suspiciously cheap numbers — if the
+budget is generous, spend it on quality. Never EXCEED what the total can
+cover either; the maths must comfortably close.
 
 ${scopeBrief(country, hasPassport, intlOK)}
 
@@ -482,12 +489,16 @@ The "days" array MUST contain EXACTLY ${numDays} entries — no more, no
 less, regardless of what feels natural. Day numbers must run from 1 to
 ${numDays} inclusive.
 
-BUDGET INTERPRETATION:
+BUDGET INTERPRETATION — USE THE BUDGET:
 The user's total budget of ₹${intent.budget_inr} is for the WHOLE trip
-including transport from their origin. "estimated_cost_inr" you return
-is stay + food + activities ONLY (NOT transport). Pick stays and
-activities priced so that estimated_cost_inr + a realistic round-trip
-transport from origin still fits inside the total budget.
+including transport from their origin. "estimated_cost_inr" you return is
+stay + food + activities ONLY (NOT transport). Size it to genuinely USE
+the budget — pick comfortable stays and a full set of activities, landing
+estimated_cost_inr around 60-75% of the total (the rest is transport).
+For a ₹${intent.budget_inr} budget that's roughly
+₹${Math.round(intent.budget_inr * 0.65).toLocaleString("en-IN")} on stay +
+food + activities. Don't return a rock-bottom number for a generous budget,
+and never exceed what the total can cover.
 
 DISTANCE — REQUIRED:
 Also return "est_distance_km": your honest estimate of the one-way road

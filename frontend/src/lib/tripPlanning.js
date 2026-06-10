@@ -133,7 +133,12 @@ export function computeRoutes({ origin, destination, mode, totalBudget, partySiz
   const flightOk  = km > 400;
   const flightCost = Math.round(((elite ? 14000 : 7500) * (km / 1000)) / 500) * 500;
   const trainCost  = Math.round(((elite ? 4500  : 1800) * (km / 1000)) / 100) * 100;
-  const roadCost   = Math.round((km * 18) / partySize / 100) * 100;
+  // Road cost = whole-vehicle fuel + tolls, then split across the party.
+  // Sasta = self-drive / shared cab (~₹9/km); Elite = private cab (~₹16/km).
+  // Divided by party size so groups see a much lower per-person figure.
+  const roadPerKm  = elite ? 16 : 9;
+  const roadTotal  = km * roadPerKm;
+  const roadCost   = Math.round((roadTotal / Math.max(1, partySize)) / 100) * 100;
   const flightHrs  = Math.round((km / 700) * 10) / 10 + 2;
   const trainHrs   = Math.round((km / 70)  * 10) / 10;
   const roadHrs    = Math.round((km / 60)  * 10) / 10;

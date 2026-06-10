@@ -143,12 +143,16 @@ export default function ChatInterface({
   // ---- autoscroll: scroll a sentinel into view at the bottom of the feed.
   // Triggers on message changes, when an itinerary opens, or while sending.
   const bottomRef = useRef(null);
+  // Auto-scroll to the newest message ONLY when a message is added or while
+  // a deck is generating. We deliberately do NOT scroll on openCard changes:
+  // tapping a card shows the loading skeleton in place, and jumping to the
+  // page bottom mid-build felt jarring.
   useEffect(() => {
     const id = window.setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }, 80);
     return () => window.clearTimeout(id);
-  }, [messages.length, sending, openCard]);
+  }, [messages.length, sending]);
 
   // ---- send a turn (free text or modal-built prompt) ---------------
   // `intentOverride` short-circuits the backend's Groq-based intent parser
@@ -473,7 +477,7 @@ export default function ChatInterface({
                         onCardOpen={(card) => onCardOpen(m.id, card)}
                       />
                       <AnimatePresence>
-                        {itin && (
+                        {itin ? (
                           <ItineraryView
                             key={itin.id}
                             itinerary={itin}
@@ -485,7 +489,9 @@ export default function ChatInterface({
                             onLocked={(destination) => onSessionTitleChange?.(sessionId, destination)}
                             onOpenChat={() => setChatOpen(true)}
                           />
-                        )}
+                        ) : opened ? (
+                          <SkeletonItinerary key="skel-itin" />
+                        ) : null}
                       </AnimatePresence>
                     </motion.div>
                   );
@@ -918,6 +924,65 @@ function SkeletonBoard() {
         <span className="board-foot-r mono hide-sm">LIVE-CHECKING</span>
       </div>
     </div>
+  );
+}
+
+// ---------- Skeleton itinerary shown after tapping a card ----------
+// Mimics the boarding-pass + timeline shape so the page doesn't jump
+// when the real itinerary (~12s) arrives. Cycles a build-status line.
+const ITIN_STEPS = [
+  "Opening the boarding pass…",
+  "Verifying this destination live…",
+  "Mapping the route…",
+  "Pricing stays + transport…",
+  "Writing the day-by-day plan…",
+  "Almost ready…",
+];
+function SkeletonItinerary() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setStep((s) => Math.min(s + 1, ITIN_STEPS.length - 1)), 2400);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+      className="itin glass-strong mt-3"
+      aria-busy="true"
+    >
+      {/* boarding-pass skeleton */}
+      <div className="pass hud" style={{ minHeight: 120 }}>
+        <div className="pass-l" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="sk sk-line" style={{ width: 90, height: 18 }} />
+          <div className="sk sk-line" style={{ width: "60%", height: 34 }} />
+          <div className="sk sk-line" style={{ width: "75%" }} />
+        </div>
+        <div className="pass-stub" style={{ gap: 14 }}>
+          <div className="sk sk-line" style={{ width: 60 }} />
+          <div className="sk sk-line" style={{ width: 40, height: 30 }} />
+        </div>
+      </div>
+      {/* hud map skeleton */}
+      <div className="sk" style={{ height: 170, borderRadius: "var(--r)" }} />
+      {/* a couple of timeline rows */}
+      {[0, 1].map((i) => (
+        <div className="tl-day" key={i}>
+          <div className="tl-rail"><span className="sk" style={{ width: 44, height: 44, borderRadius: 10 }} /></div>
+          <div className="tl-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="sk sk-line" style={{ width: "45%", height: 16 }} />
+            <div className="sk sk-line" style={{ width: "90%" }} />
+            <div className="sk sk-line" style={{ width: "80%" }} />
+          </div>
+        </div>
+      ))}
+      <div className="mono" style={{
+        display: "flex", alignItems: "center", gap: 8, justifyContent: "center",
+        fontSize: 11, letterSpacing: "0.08em", color: "var(--accent)", paddingTop: 4,
+      }}>
+        <Loader2 size={12} className="animate-spin" />
+        {ITIN_STEPS[step]}
+      </div>
+    </motion.div>
   );
 }
 
