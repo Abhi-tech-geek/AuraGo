@@ -195,6 +195,14 @@ function PublicTrip({ trip }) {
                 )}
                 {it.travel_date && <span className="dot">/</span>}
                 <span>LOCKED {new Date(trip.locked_at || Date.now()).toLocaleDateString(undefined, { day: "numeric", month: "short" }).toUpperCase()}</span>
+                {it.crowd_level && (<>
+                  <span className="dot">/</span>
+                  <span className={`cl-text cl-${it.crowd_level}`}>CROWD: {String(it.crowd_level).toUpperCase()}</span>
+                </>)}
+                {it.international && (<>
+                  <span className="dot">/</span>
+                  <span style={{ color: "var(--accent)" }}>✈ INTERNATIONAL</span>
+                </>)}
               </div>
             </div>
             <div className="pass-stub">

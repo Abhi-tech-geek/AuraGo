@@ -139,6 +139,10 @@ button, a, [role="button"] { -webkit-tap-highlight-color: transparent; }
   background:
     radial-gradient(130% 100% at 78% 6%, #11192A 0%, var(--bg) 58%),
     var(--bg);
+  /* Promote to a compositor layer so scrolling never repaints the
+     full-screen gradient (was causing heavy scroll jank on Windows). */
+  transform: translateZ(0);
+  contain: strict;
 }
 body.theme-light .aurora {
   background:
@@ -151,20 +155,24 @@ body.theme-light .aurora {
     repeating-radial-gradient(circle at 76% 14%, transparent 0 38px, rgba(var(--accent-rgb),0.05) 38px 39px),
     repeating-radial-gradient(circle at 14% 88%, transparent 0 44px, rgba(120,150,255,0.045) 44px 45px);
   opacity: 0.9;
+  transform: translateZ(0);
 }
 body.theme-light .aurora::before { opacity: 0.5; }
+/* Static glow — the old 50vw blur(60px) layer animating forever was the
+   single biggest scroll-jank source. Smaller blur, no animation. */
 .aurora-blob {
   position: absolute; width: 50vw; height: 50vw; left: 55%; top: -10%;
   background: radial-gradient(circle, rgba(var(--accent-rgb),0.16), transparent 60%);
-  filter: blur(60px); pointer-events: none;
-  animation: float1 16s var(--ease) infinite alternate;
+  filter: blur(40px); pointer-events: none;
+  transform: translateZ(0);
 }
-@keyframes float1 { to { transform: translate(-8vw, 8vh) scale(1.1); } }
 
 .grain {
   position: fixed; inset: 0; z-index: 1; pointer-events: none;
   opacity: var(--grain-opacity);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  transform: translateZ(0);
+  contain: strict;
 }
 body.no-grain .grain { display: none; }
 
@@ -547,7 +555,7 @@ body.theme-light .ra {
   position: fixed; left: 4%; top: 16%; width: 460px; height: 460px;
   border-radius: 50%; z-index: 0; pointer-events: none;
   background: radial-gradient(circle, rgba(var(--accent-rgb),0.16), transparent 62%);
-  filter: blur(50px); animation: float1 16s var(--ease) infinite alternate;
+  filter: blur(40px); transform: translateZ(0);
 }
 .ra-left {
   position: relative; z-index: 1;
@@ -744,6 +752,27 @@ body.theme-light .flap2.blank {
   font-size: 12px; color: var(--ink-dim); line-height: 1.4;
   max-width: 95%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Crowd-level + international chips on board rows */
+.brow-crowd {
+  display: inline-block; margin-left: 8px; padding: 1px 6px;
+  border-radius: 4px; font-family: var(--mono);
+  font-size: 9px; letter-spacing: 0.1em; vertical-align: 1px;
+  border: 1px solid var(--line-2); color: var(--ink-dim);
+}
+.brow-crowd.cl-low  { color: #4ade80; border-color: rgba(74,222,128,0.35); }
+.brow-crowd.cl-high { color: #f87171; border-color: rgba(248,113,113,0.35); }
+.brow-crowd.cl-moderate { color: #fbbf24; border-color: rgba(251,191,36,0.35); }
+.brow-crowd.cl-intl { color: var(--accent); border-color: var(--accent-line); }
+body.theme-light .brow-crowd.cl-low  { color: #15803d; border-color: rgba(21,128,61,0.4); }
+body.theme-light .brow-crowd.cl-high { color: #b91c1c; border-color: rgba(185,28,28,0.4); }
+body.theme-light .brow-crowd.cl-moderate { color: #a16207; border-color: rgba(161,98,7,0.4); }
+/* Crowd text colour in the boarding-pass meta line */
+.cl-text.cl-low  { color: #4ade80; }
+.cl-text.cl-high { color: #f87171; }
+.cl-text.cl-moderate { color: #fbbf24; }
+body.theme-light .cl-text.cl-low  { color: #15803d; }
+body.theme-light .cl-text.cl-high { color: #b91c1c; }
+body.theme-light .cl-text.cl-moderate { color: #a16207; }
 .brow-vibe {
   font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent);
 }

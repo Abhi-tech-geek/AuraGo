@@ -126,11 +126,16 @@ export function computeBudgetBreakdown(destinationCost, mode, transportCost = nu
 // =====================================================================
 // Route options — flight / train / road
 // =====================================================================
-export function computeRoutes({ origin, destination, mode, totalBudget, partySize, payloadKm }) {
+export function computeRoutes({ origin, destination, mode, totalBudget, partySize, payloadKm, international = false }) {
   const km = distanceFromOrigin(origin, destination, payloadKm);
   const elite = mode === "elite";
 
-  const flightOk  = km > 400;
+  // International trips are flight-only — there is no train or cab from
+  // India to Laos. (Real land borders like Nepal are rare enough that we
+  // keep it simple and always fly for international.)
+  const intl = !!international;
+
+  const flightOk  = intl || km > 400;
   const flightCost = Math.round(((elite ? 14000 : 7500) * (km / 1000)) / 500) * 500;
   const trainCost  = Math.round(((elite ? 4500  : 1800) * (km / 1000)) / 100) * 100;
   // Road cost = whole-vehicle fuel + tolls, then split across the party.
@@ -147,22 +152,26 @@ export function computeRoutes({ origin, destination, mode, totalBudget, partySiz
   if (flightOk) {
     opts.push({
       mode: "flight", icon: "✈️", label: "Flight",
-      cost_pp: flightCost, time: `${flightHrs.toFixed(1)} hr`,
-      via: `${origin} → ${destination} (direct)`,
-      pros: ["Fastest", elite ? "Comfortable for elite trips" : "Saves a day each way"],
-      cons: km < 600 ? ["Overkill for short distance"] : [],
-      score: elite ? 9.2 : 7.5,
+      cost_pp: Math.max(flightCost, intl ? (elite ? 25000 : 12000) : 0),
+      time: `${flightHrs.toFixed(1)} hr`,
+      via: intl ? `${origin} → ${destination} (intl, incl. layover)` : `${origin} → ${destination} (direct)`,
+      pros: intl ? ["Only realistic option", "Book 6-8 weeks out for fares"]
+                 : ["Fastest", elite ? "Comfortable for elite trips" : "Saves a day each way"],
+      cons: !intl && km < 600 ? ["Overkill for short distance"] : [],
+      score: intl ? 9.5 : (elite ? 9.2 : 7.5),
     });
   }
-  opts.push({
-    mode: "train", icon: "🚆", label: "Train (AC)",
-    cost_pp: trainCost, time: `${trainHrs.toFixed(1)} hr`,
-    via: `${origin} → ${destination} via Rajdhani / Vande Bharat`,
-    pros: ["Sweet spot of cost & comfort", "Sightseeing en route"],
-    cons: trainHrs > 18 ? ["Long journey"] : [],
-    score: 8.8,
-  });
-  if (km < 1000) {
+  if (!intl) {
+    opts.push({
+      mode: "train", icon: "🚆", label: "Train (AC)",
+      cost_pp: trainCost, time: `${trainHrs.toFixed(1)} hr`,
+      via: `${origin} → ${destination} via Rajdhani / Vande Bharat`,
+      pros: ["Sweet spot of cost & comfort", "Sightseeing en route"],
+      cons: trainHrs > 18 ? ["Long journey"] : [],
+      score: 8.8,
+    });
+  }
+  if (!intl && km < 1000) {
     opts.push({
       mode: "road", icon: "🚗", label: "Road trip",
       cost_pp: roadCost, time: `${roadHrs.toFixed(1)} hr`,

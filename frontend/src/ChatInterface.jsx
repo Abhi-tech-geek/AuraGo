@@ -95,7 +95,17 @@ export default function ChatInterface({
         }
         if (messagesResult.error) throw messagesResult.error;
         setSession(sessionResult.data);
-        setMessages(messagesResult.data ?? []);
+        const msgs = messagesResult.data ?? [];
+        setMessages(msgs);
+        // Resume where the user left off: re-open the itinerary they had
+        // open — locked plans especially must survive a page reload
+        // (openCard is client state, gone on refresh).
+        const itins = msgs.filter(
+          (m) => m.kind === "itinerary" && m.parent_message_id && m.payload?.card_id
+        );
+        const lockedItin = [...itins].reverse().find((m) => m.payload?.locked);
+        const resume = lockedItin ?? itins[itins.length - 1] ?? null;
+        setOpenCard(resume ? { [resume.parent_message_id]: resume.payload.card_id } : {});
       } catch (e) {
         if (cancelled) return;
         console.error("initial chat load failed", e);
@@ -468,9 +478,10 @@ export default function ChatInterface({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          {/* Always-visible New trip — start a fresh session without
-              scrolling up or reaching for the sidebar. */}
-          {onNewTrip && (
+          {/* New trip in the header — but only once a trip is underway.
+              The welcome screen already has its own START A TRIP button,
+              so showing both was redundant. */}
+          {onNewTrip && messages.length > 0 && (
             <motion.button
               onClick={onNewTrip}
               whileHover={{ scale: 1.04 }}
@@ -1199,7 +1210,15 @@ function BoardRow({ card, ord, active, onOpen }) {
             </span>
           )}
         </span>
-        <span className="brow-blurb">{card.blurb}</span>
+        <span className="brow-blurb">
+          {card.blurb}
+          {card.crowd_level && (
+            <span className={`brow-crowd cl-${card.crowd_level}`}>
+              {card.crowd_level === "low" ? "LOW CROWD" : card.crowd_level === "high" ? "CROWDED" : "MID CROWD"}
+            </span>
+          )}
+          {card.international && <span className="brow-crowd cl-intl">✈ INTL</span>}
+        </span>
       </span>
       <span className="brow-vibe mono hide-sm">{card.vibe}</span>
       <span className="brow-score display">
@@ -1301,8 +1320,9 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
       totalBudget: prefs.budget_inr,
       partySize: prefs.party_size,
       payloadKm: p.est_distance_km,
+      international: !!(p.international ?? card?.international),
     }),
-    [prefs.origin, p.destination, prefs.mode, prefs.budget_inr, prefs.party_size, p.est_distance_km]
+    [prefs.origin, p.destination, prefs.mode, prefs.budget_inr, prefs.party_size, p.est_distance_km, p.international, card]
   );
 
   const recommendedIdx = Math.max(0, routeOpts.findIndex((r) => r.recommended));
@@ -1500,9 +1520,19 @@ function ItineraryView({ itinerary, deck, prefs, sessionId, onBack, onPickSimila
           <span className="pill-accent">{p.vibe}</span>
           <h2 className="serif-i itin-title">{p.destination}</h2>
           <div className="itin-meta">
-            <span>{(prefs.country || "").toUpperCase()}</span>
+            <span>{((p.country || prefs.country) || "").toUpperCase()}</span>
+            {p.international && (<>
+              <span className="dot">/</span>
+              <span style={{ color: "var(--accent)" }}>✈ INTERNATIONAL</span>
+            </>)}
             <span className="dot">/</span>
             <span>{Number(km).toLocaleString("en-IN")} KM FROM {(prefs.origin || "ORIGIN").toUpperCase()}</span>
+            {p.crowd_level && (<>
+              <span className="dot">/</span>
+              <span className={`cl-text cl-${p.crowd_level}`}>
+                CROWD: {p.crowd_level.toUpperCase()}
+              </span>
+            </>)}
             {p.travel_date && (<>
               <span className="dot">/</span>
               <span>{new Date(p.travel_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }).toUpperCase()}</span>

@@ -104,9 +104,9 @@ async function parseIntent(prompt, sessionDefaults) {
   const sys = `You extract trip planning constraints from a user message.
 Return JSON only with this exact shape:
 {
-  "mode": "sasta" | "elite",
+  "mode": "sasta" | "elite" | null,
   "budget_inr": number | null,
-  "party_size": number,
+  "party_size": number | null,
   "universal_access": boolean,
   "must_haves": string[],
   "avoid": string[]
@@ -114,6 +114,8 @@ Return JSON only with this exact shape:
 Rules:
 - "Sasta" / cheap / budget / college → mode="sasta".
 - "Elite" / luxury / premium / honeymoon → mode="elite".
+- If the message does NOT clearly signal a budget tier, mode=null —
+  do NOT guess; the saved session preference will be used.
 - "wheelchair" / "Universal Access" / "accessible" → universal_access=true.
 - Convert "1.5 Lakhs" → 150000, "2L" → 200000, "50k" → 50000.`;
 
@@ -190,6 +192,16 @@ async function generateCandidatePool(intent) {
   const hasPassport = !!intent.has_passport;
   const intlOK      = isIntlFeasible(intent);
 
+  const modeBrief = intent.mode === "elite"
+    ? `MODE = ELITE: boutique stays / heritage hotels, flights where sensible,
+curated dining, private transfers. Comfort and exclusivity over savings.
+Pick places that reward spending — vineyards, palace stays, island resorts
+that aren't overrun.`
+    : `MODE = SASTA (budget): hostels / guesthouses / homestays, sleeper
+trains and buses domestically, street food. Pick places where money goes
+far — backpacker circuits, small towns, homestay regions. Never suggest a
+place whose baseline costs blow a budget traveller's math.`;
+
   const sys = `You are AuraGo, a global travel discovery planner.
 Propose exactly 8 distinct destinations that match the constraints.
 
@@ -201,6 +213,20 @@ unless they uniquely fit; for Europe avoid Paris / Rome / Barcelona;
 for SE Asia avoid Bali / Phuket). Suggest places a well-travelled
 friend would recommend over a guidebook — small towns, off-season
 spots, second cities, untouched coastlines, regional cultural pockets.
+
+VARIETY (REQUIRED):
+The 8 picks must span at least 4 different hint_categories and at least
+4 different states/regions. Never return two destinations from the same
+state/province. Mix terrain: not all mountains, not all beaches.
+
+${modeBrief}
+
+TRANSPORT REALISM (NON-NEGOTIABLE):
+International destinations are reached by FLIGHT — never claim a train,
+bus or road route exists from ${country} to another country unless a real
+direct land link exists (e.g., India→Nepal road is real; India→Laos or
+India→anywhere overseas by train is NOT). When budgeting international
+picks, assume round-trip airfare.
 
 BUDGET — USE IT, DON'T UNDERSHOOT (VERY IMPORTANT):
 Total budget is ₹${intent.budget_inr} for ${intent.party_size} ${intent.party_size === 1 ? "person" : "people"} over ${intent.days ?? 4} days.
@@ -234,6 +260,11 @@ For each destination give:
   place fits THIS specific traveller (reference their budget, days, party
   size, season, or stated vibe). Be specific, not generic. The
   destination name MAY be used here.
+- a "crowd_level" — "low" | "moderate" | "high": honest expected tourist
+  crowd at the travel time (hidden gems are usually low/moderate; be
+  truthful if a pick does get busy).
+- "country" — the destination's country name.
+- "international" — true if the destination is outside ${country}.
 
 Return JSON only:
 {
@@ -242,7 +273,10 @@ Return JSON only:
     "ai_value_score": <number>, "est_cost_inr": <int>,
     "blurb":"<<=120 chars, no destination name>>",
     "hint_category":"<one of the categories>",
-    "why_match":"<one specific sentence>"}
+    "why_match":"<one specific sentence>",
+    "crowd_level":"<low|moderate|high>",
+    "country":"<country>",
+    "international": <true|false>}
  ]
 }`;
   const userMsg = `Constraints: ${JSON.stringify(intent)}`;
@@ -254,6 +288,12 @@ Return JSON only:
   return candidates.map((c) => ({
     ...c,
     hint_category: HINT_CATEGORIES.includes(c.hint_category) ? c.hint_category : "city",
+    crowd_level: ["low", "moderate", "high"].includes(c.crowd_level) ? c.crowd_level : "moderate",
+    // Belt-and-braces: if the LLM forgot the flag, infer it from the
+    // destination string ("..., Country" suffix differing from home).
+    international: typeof c.international === "boolean"
+      ? c.international
+      : !String(c.destination || "").toLowerCase().includes(country.toLowerCase()),
   }));
 }
 
@@ -423,6 +463,9 @@ export async function chatTurn(req, res) {
       hint_category: c.hint_category ?? "city",
       hint_emoji: c.hint_emoji, // back-compat for older clients
       why_match: c.why_match ?? null,
+      crowd_level: c.crowd_level ?? "moderate",
+      country: c.country ?? null,
+      international: !!c.international,
       accessibility_ok: c.accessibility_ok,
       _destination: c.destination,
       _summary:     c._summary,
@@ -456,7 +499,7 @@ export async function chatTurn(req, res) {
 
 // Shared helper — builds an itinerary payload for one destination.
 // Used by both expandCard and directTrip.
-async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value_score, card_id, intent, startDate, why_match }) {
+async function buildItineraryPayload({ destination, vibe, est_cost_inr, ai_value_score, card_id, intent, startDate, why_match, crowd_level, international, dest_country }) {
   const fresh = await ragVerify(
     { destination, vibe, ai_value_score, est_cost_inr },
     intent
@@ -501,16 +544,31 @@ food + activities. Don't return a rock-bottom number for a generous budget,
 and never exceed what the total can cover.
 
 DISTANCE — REQUIRED:
-Also return "est_distance_km": your honest estimate of the one-way road
+Also return "est_distance_km": your honest estimate of the one-way
 distance from "${intent.origin || "the user's origin"}" to "${destination}"
 in kilometres. Use real-world geography, not guesses (Vrindavan from
 Delhi is ~150 km; Goa from Bangalore is ~560 km; etc.).
+
+TRANSPORT REALISM (NON-NEGOTIABLE):
+If the destination is in a DIFFERENT country than the traveller's origin
+country, the only realistic way there is a FLIGHT (unless a genuine land
+border crossing exists, like India→Nepal by road). NEVER write a day
+title or activity that involves a train/bus/road trip across an ocean or
+to an unconnected country. Also return "international": true|false and
+"dest_country": the destination's country.
+
+CROWD LEVEL — REQUIRED:
+Return "crowd_level": "low" | "moderate" | "high" — honest expected
+tourist crowd at the destination during the travel period.
 
 Return JSON only:
 {
  "days": [{"day":1,"title":"...","activities":["...","..."]}],
  "estimated_cost_inr": <int>,
  "est_distance_km": <int>,
+ "international": <true|false>,
+ "dest_country": "<country>",
+ "crowd_level": "<low|moderate|high>",
  "weather": {
    "summary": "<one short line, e.g. 'Pleasant 12-22°C, occasional rain'>",
    "temp_c": "<e.g. '12-22°C' or 'around 30°C'>",
@@ -636,6 +694,12 @@ Smart access notes: ${JSON.stringify(fresh._access_notes)}`;
     photos: photoList,
     route_stops: isMultiStop ? routeStops : [],
     why_match: why_match ?? null,
+    // Card values win (already shown to the user); LLM plan fills gaps for
+    // direct trips that never had a deck card.
+    crowd_level: crowd_level
+      ?? (["low", "moderate", "high"].includes(plan.crowd_level) ? plan.crowd_level : "moderate"),
+    international: typeof international === "boolean" ? international : !!plan.international,
+    country: dest_country ?? plan.dest_country ?? null,
   };
 }
 
@@ -687,6 +751,9 @@ export async function expandCard(req, res) {
       intent,
       startDate,
       why_match: card.why_match,
+      crowd_level: card.crowd_level,
+      international: card.international,
+      dest_country: card.country,
     });
 
     const { data: itinMsg, error: itinErr } = await supabase.from("messages").insert({
@@ -775,7 +842,10 @@ export async function directTrip(req, res) {
  "ai_value_score": <number 1-10>,
  "est_cost_inr": <int — total spend for the whole party, excluding travel>,
  "blurb": "<<= 100 chars one-line vibe; do NOT include the destination name>",
- "hint_category": "<one of: ${HINT_CATEGORIES.join(", ")}>"
+ "hint_category": "<one of: ${HINT_CATEGORIES.join(", ")}>",
+ "crowd_level": "<low|moderate|high — honest expected tourist crowd>",
+ "country": "<destination's country>",
+ "international": <true if outside the traveller's home country>
 }`;
       const text = await groqChat(sys, `Destination: ${destination}\nMode: ${intent.mode}\nBudget: ₹${intent.budget_inr}\nParty size: ${intent.party_size}`, { temperature: 0.4 });
       const meta = json(text);
@@ -793,6 +863,9 @@ export async function directTrip(req, res) {
       blurb: card.blurb,
       hint_category: HINT_CATEGORIES.includes(card.hint_category) ? card.hint_category : "city",
       hint_emoji: card.hint_emoji, // back-compat
+      crowd_level: ["low", "moderate", "high"].includes(card.crowd_level) ? card.crowd_level : "moderate",
+      country: card.country ?? null,
+      international: !!card.international,
       accessibility_ok: true,
       _destination: card.destination,
       _summary: `${card.destination} matches your ${intent.mode} brief.`,
@@ -822,6 +895,9 @@ export async function directTrip(req, res) {
       card_id: cardId,
       intent,
       startDate,
+      crowd_level: cardForDeck.crowd_level,
+      international: cardForDeck.international,
+      dest_country: cardForDeck.country,
     });
 
     const { data: itinMsg, error: itinErr } = await supabase.from("messages").insert({
@@ -1182,6 +1258,9 @@ export async function lockTrip(req, res) {
         hazard: p.hazard,
         route_stops: p.route_stops ?? [],
         why_match: p.why_match ?? null,
+        crowd_level: p.crowd_level ?? null,
+        international: p.international ?? null,
+        country: p.country ?? null,
       },
       accessibility_notes: p.accessibility_notes,
       rag_citations: p.citations, status: "locked", locked_by: userId,
@@ -1191,6 +1270,12 @@ export async function lockTrip(req, res) {
         return res.status(409).json({ error: "session already locked" });
       throw error;
     }
+
+    // Mark the itinerary message itself as locked so a page reload can
+    // restore the locked view (openCard is client state and dies on refresh).
+    await supabase.from("messages")
+      .update({ payload: { ...p, locked: true, trip_id: trip.id } })
+      .eq("id", itin.id);
 
     // Rename the session to the locked destination so the sidebar reflects it.
     await supabase.from("sessions")
