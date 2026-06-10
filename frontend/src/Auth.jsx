@@ -137,7 +137,6 @@ export default function Auth() {
                 {mode === "signup" ? "Create account" : "Sign in"}
               </motion.h2>
             </AnimatePresence>
-            <span className="pill-accent">{mode === "signup" ? "NEW" : "RETURN"}</span>
           </div>
 
           <form onSubmit={handleSubmit} className="ra-form">

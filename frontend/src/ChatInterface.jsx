@@ -54,7 +54,7 @@ const FALLBACK_PREFS = {
 export default function ChatInterface({
   sessionId, currentUser, prefs: prefsProp, onPrefsChange,
   onOpenSidebar, onToggleSidebar, sidebarPinned = true,
-  onSessionTitleChange,
+  onSessionTitleChange, onNewTrip,
 }) {
   const prefs = prefsProp ?? FALLBACK_PREFS;
   const [session, setSession]     = useState(null);
@@ -418,6 +418,19 @@ export default function ChatInterface({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          {/* Always-visible New trip — start a fresh session without
+              scrolling up or reaching for the sidebar. */}
+          {onNewTrip && (
+            <motion.button
+              onClick={onNewTrip}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.95 }}
+              className="btn btn-primary btn-sm btn-cta"
+              title="Start a new trip"
+            >
+              <Plus size={13} /> <span className="hidden sm:inline">New trip</span>
+            </motion.button>
+          )}
           <div className="flex rounded-full border border-white/10 bg-white/[0.03] p-0.5 text-[11px] sm:text-xs">
             <ModeBtn active={prefs.mode === "sasta"} onClick={() => handleModeToggle("sasta")}>Sasta</ModeBtn>
             <ModeBtn active={prefs.mode === "elite"} onClick={() => handleModeToggle("elite")}>Elite</ModeBtn>
@@ -589,11 +602,14 @@ export default function ChatInterface({
         currentUserId={currentUser.id}
       />
 
-      {/* Floating "trip chat" toggle — sits ABOVE the concierge bubble
-          with a deliberate gap so the two never overlap on small screens.
-          Hidden until there's an itinerary so the welcome stays clean. */}
+      {/* Floating "trip chat" toggle — collaboration side-chat. Only shown
+          once a group chat actually has messages, so solo users aren't
+          confused by two floating icons. To START a group chat, the
+          itinerary header has a "Chat" button. The always-on place-aware
+          assistant is the Concierge (separate FAB). Stacked above the
+          concierge so they never overlap. */}
       <AnimatePresence>
-        {messages.some((m) => m.kind === "itinerary" || m.kind === "lock_event") && (
+        {messages.some((m) => m.kind === "chat") && (
           <motion.button
             key="chat-fab"
             initial={{ opacity: 0, scale: 0.5, y: 20 }}
@@ -603,20 +619,15 @@ export default function ChatInterface({
             onClick={() => setChatOpen(true)}
             whileHover={{ scale: 1.06 }}
             whileTap={{ scale: 0.94 }}
-            // Stack: concierge sits at bottom-6.5rem; we add 4.25rem so this
-            // button sits above it with a small gap. Right edge aligns with
-            // both buttons.
             style={{ bottom: "calc(10.75rem + env(safe-area-inset-bottom))" }}
             className="glass fixed right-4 z-40 grid h-12 w-12 place-items-center rounded-full border border-white/[0.08] sm:right-6"
             title="Trip chat"
             aria-label="Open trip chat"
           >
             <MessageSquare size={18} className="accent-text" />
-            {messages.filter((m) => m.kind === "chat").length > 0 && (
-              <span className="accent-bg absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold text-slate-900">
-                {messages.filter((m) => m.kind === "chat").length}
-              </span>
-            )}
+            <span className="accent-bg absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full px-1 text-[9px] font-bold text-slate-900">
+              {messages.filter((m) => m.kind === "chat").length}
+            </span>
           </motion.button>
         )}
       </AnimatePresence>

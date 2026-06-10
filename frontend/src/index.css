@@ -1074,7 +1074,11 @@ body.theme-light .totals { background: rgba(11,14,21,0.025); }
 /* floating dock (FABs) */
 .dock { position: fixed; right: 20px; bottom: 22px; z-index: 90; display: flex; flex-direction: column; gap: 13px; }
 .fab {
-  position: relative; width: 54px; height: 54px;
+  /* NOTE: no position here — callers set position (fixed/relative) via
+     Tailwind utility or inline style. Forcing position:relative here used
+     to override the Tailwind `fixed` utility (CSS source order) and made
+     the concierge FAB render in normal flow. */
+  width: 54px; height: 54px;
   border-radius: 12px; border: 1px solid var(--accent-line); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   background: rgba(14,18,27,0.92); color: var(--ink);

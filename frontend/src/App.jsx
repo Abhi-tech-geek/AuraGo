@@ -384,6 +384,7 @@ function AuthedApp() {
           }}
           sidebarPinned={sidebarPinned}
           onSessionTitleChange={updateSessionTitle}
+          onNewTrip={handleNewSession}
         />
       </div>
       <TripsCompareModal
