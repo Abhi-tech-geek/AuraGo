@@ -1210,10 +1210,21 @@ export async function lockTrip(req, res) {
 // =====================================================================
 export async function chatQA(req, res) {
   try {
-    const { destination, vibe, weather, days, question } = req.body;
+    const { destination, vibe, weather, days, question, sessionId } = req.body;
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: "unauthorized" });
     if (!question?.trim()) return res.status(400).json({ error: "missing question" });
+
+    // When a sessionId is supplied the conversation happens in the main feed
+    // (the composer becomes the place-chat after a trip is open/locked). We
+    // persist the user's question first so it appears instantly via realtime,
+    // then persist the assistant answer below. Both are plain text bubbles.
+    if (sessionId) {
+      await supabase.from("messages").insert({
+        session_id: sessionId, author_id: userId,
+        role: "user", kind: "text", content: question.trim(),
+      });
+    }
 
     const sys = `You are AuraGo, a friendly Indian travel concierge.
 Answer the user's follow-up question about their trip. Be concise (3-6 sentences).
@@ -1236,6 +1247,12 @@ User question: ${question}`;
       if (parsed?.answer) answer = parsed.answer;
     } catch (e) {
       console.warn("chatQA generation failed:", e.message);
+    }
+
+    if (sessionId) {
+      await supabase.from("messages").insert({
+        session_id: sessionId, role: "assistant", kind: "text", content: answer,
+      });
     }
 
     return res.json({ ok: true, answer });

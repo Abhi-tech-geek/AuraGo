@@ -36,7 +36,6 @@ async function authedFetch(url, opts = {}) {
 
 import { supabase } from "./supabaseClient";
 import BudgetModal from "./BudgetModal";
-import ConciergeChat from "./ConciergeChat";
 import { citiesFor } from "./lib/cities";
 import { PLACE_TEASERS, VIBE_TEASERS } from "./lib/teasers";
 import { toast } from "./Toast";
@@ -70,6 +69,7 @@ export default function ChatInterface({
   // they can confirm budget / people / days / date — then we plan with those
   // confirmed prefs instead of using stale session defaults.
   const [pendingDestination, setPendingDestination] = useState(null);
+  const [asking, setAsking] = useState(false); // concierge Q&A in flight
 
   // Apply mode class to <body> so CSS variables flip globally
   useEffect(() => {
@@ -292,9 +292,55 @@ export default function ChatInterface({
     }
   }, [sending, sessionId, currentUser, prefs]);
 
+  // Once a trip is open/locked in this session, the composer becomes the
+  // place-chat — typing asks the concierge about that destination and the
+  // answer appears right in the feed (no separate floating bot).
+  const conciergeCtx = openItineraryContext(messages, openCard);
+  const askMode = !!conciergeCtx?.destination;
+
+  const askConcierge = useCallback(async (text) => {
+    const q = text.trim();
+    if (!q || sending || asking || !conciergeCtx?.destination) return;
+    setInput("");
+    setAsking(true);
+    try {
+      const { data: authData } = await supabase.auth.getSession();
+      const token = authData?.session?.access_token;
+      // Backend persists both the question and the answer as feed messages,
+      // so they show up here AND for any collaborators via realtime.
+      const res = await fetch("/api/chat/qa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          sessionId,
+          destination: conciergeCtx.destination,
+          vibe: conciergeCtx.vibe,
+          weather: conciergeCtx.weather,
+          days: conciergeCtx.days,
+          question: q,
+        }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`qa ${res.status}`);
+    } catch (e) {
+      console.error("concierge ask failed", e);
+      toast.error("Couldn't reach the concierge. Try again.");
+    } finally {
+      setAsking(false);
+    }
+  }, [sending, asking, conciergeCtx, sessionId]);
+
   const handleSendInput = useCallback(() => {
     const text = input.trim();
-    if (!text) { setModalOpen(true); return; }
+    if (!text) { if (!askMode) setModalOpen(true); return; }
+    if (askMode) {
+      // Chatting about the open/locked trip.
+      askConcierge(text);
+      return;
+    }
     setInput("");
     if (composerMode === "direct") {
       // For direct destinations, open the budget modal first so the user
@@ -304,7 +350,7 @@ export default function ChatInterface({
     } else {
       sendTurn(text);
     }
-  }, [input, composerMode, sendTurn]);
+  }, [input, composerMode, sendTurn, askMode, askConcierge]);
 
   const handleModalSubmit = useCallback((next) => {
     setModalOpen(false);
@@ -506,6 +552,7 @@ export default function ChatInterface({
             </AnimatePresence>
 
             {sending && <SkeletonBoard />}
+            {asking && <TypingBubble />}
             {/* Auto-scroll sentinel */}
             <div ref={bottomRef} aria-hidden="true" />
           </div>
@@ -517,33 +564,55 @@ export default function ChatInterface({
         className={`safe-bottom-pad safe-px fixed bottom-0 right-0 z-20 px-3 pt-2 transition-[left] duration-300 ease-out sm:px-8 ${sidebarPinned ? "left-0 md:left-72" : "left-0"}`}
         style={{ background: "linear-gradient(to top, var(--bg-2) 60%, transparent)" }}
       >
-        {/* Composer mode switcher — Mystery vs Direct */}
-        <div className="mx-auto mb-2 flex max-w-3xl justify-center">
-          <div className="flex rounded-full border border-white/10 bg-white/[0.04] p-0.5 text-[11px]">
-            <ComposerModeBtn
-              active={composerMode === "mystery"}
-              onClick={() => setComposerMode("mystery")}
-              icon="🎲"
-              label="Surprise me"
-            />
-            <ComposerModeBtn
-              active={composerMode === "direct"}
-              onClick={() => setComposerMode("direct")}
-              icon="📍"
-              label="I know where"
-            />
+        {/* Mode switcher (new-trip) OR place-chat context hint (ask mode) */}
+        {askMode ? (
+          <div className="mx-auto mb-2 flex max-w-3xl items-center justify-center gap-2 text-[11px]" style={{ color: "var(--ink-dim)" }}>
+            <span className="pill-accent" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Bot size={11} /> Chatting about {conciergeCtx.destination}
+            </span>
+            <span className="hidden sm:inline">— tap “New trip” up top to plan another</span>
           </div>
-        </div>
+        ) : (
+          <div className="mx-auto mb-2 flex max-w-3xl justify-center">
+            <div className="flex rounded-full border border-white/10 bg-white/[0.04] p-0.5 text-[11px]">
+              <ComposerModeBtn
+                active={composerMode === "mystery"}
+                onClick={() => setComposerMode("mystery")}
+                icon="🎲"
+                label="Surprise me"
+              />
+              <ComposerModeBtn
+                active={composerMode === "direct"}
+                onClick={() => setComposerMode("direct")}
+                icon="📍"
+                label="I know where"
+              />
+            </div>
+          </div>
+        )}
 
         <div className="glass-strong mx-auto flex max-w-3xl items-end gap-2 rounded-2xl p-2">
-          <button
-            onClick={() => setModalOpen(true)}
-            title="Trip preferences"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 hover:bg-white/[0.06]"
-          >
-            <Sliders size={16} />
-          </button>
-          {composerMode === "direct" ? (
+          {!askMode && (
+            <button
+              onClick={() => setModalOpen(true)}
+              title="Trip preferences"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/10 hover:bg-white/[0.06]"
+            >
+              <Sliders size={16} />
+            </button>
+          )}
+          {askMode ? (
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendInput(); }
+              }}
+              placeholder={`Ask anything about ${conciergeCtx.destination}…`}
+              rows={1}
+              className="accent-ring max-h-40 flex-1 resize-none rounded-lg bg-transparent px-3 py-2.5 text-[15px] placeholder:text-slate-500 focus:outline-none"
+            />
+          ) : composerMode === "direct" ? (
             <>
               <input
                 value={input}
@@ -596,8 +665,6 @@ export default function ChatInterface({
         onClose={() => { setModalOpen(false); setPendingDestination(null); }}
         onSubmit={handleModalSubmit}
       />
-
-      <ConciergeChat context={openItineraryContext(messages, openCard)} />
 
       {/* Side-thread chat between trip members (kind=chat messages) */}
       <ChatDrawer
@@ -849,6 +916,31 @@ function MessageBubble({ message }) {
           </div>
         )}
         <p className="whitespace-pre-wrap text-slate-100">{message.content}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+function TypingBubble() {
+  return (
+    <motion.div layout
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+      className="flex justify-start"
+    >
+      <div className="glass max-w-[88%] rounded-2xl px-4 py-3">
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-slate-400">
+          <Sparkles size={10} className="accent-text" /> AuraGo
+        </div>
+        <div className="flex items-center gap-1">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="block h-1.5 w-1.5 rounded-full bg-slate-400"
+              animate={{ opacity: [0.3, 1, 0.3], y: [0, -2, 0] }}
+              transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }}
+            />
+          ))}
+        </div>
       </div>
     </motion.div>
   );
